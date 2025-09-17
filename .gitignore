@@ -1,0 +1,214 @@
+# ================================
+# CHATBOT API - GitIgnore
+# ================================
+
+# --------------------------------
+# Node.js & Build Output
+# --------------------------------
+/node_modules/
+/dist/
+/build/
+*.tsbuildinfo
+
+# --------------------------------
+# Environment & Configuration
+# --------------------------------
+# Sensitive environment files
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+
+# Keep template file
+!.env.example
+
+# --------------------------------
+# Logs & Runtime
+# --------------------------------
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# --------------------------------
+# Test Files & Temporary Code
+# --------------------------------
+# Test scripts (not the test/ folder)
+test-*.ts
+test-*.js
+*test-*.ts
+*test-*.js
+
+# Temporary development files
+temp/
+tmp/
+.temp/
+.tmp/
+
+# Coverage reports
+/coverage/
+/.nyc_output/
+
+# --------------------------------
+# Documentation & Notes
+# --------------------------------
+# Personal documentation files
+todo.md
+guide.md
+relatorio.md
+melhorias.md
+notas.md
+rascunho.md
+deploy.md
+test.md
+TESTE-*.md
+ZAPI-SETUP.md
+README-DOCKER.md
+
+# Keep important docs
+!README.md
+
+# Claude Code project file (personal)
+CLAUDE.md
+
+# Files generated during development
+Retornos-*.md
+
+# --------------------------------
+# IDE & Editor Files
+# --------------------------------
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Claude Code settings (personal)
+.claude/settings.local.json
+
+# Other IDEs
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# --------------------------------
+# OS Files
+# --------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --------------------------------
+# Docker & Deployment
+# --------------------------------
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Nginx config (if contains sensitive info)
+nginx/ssl/
+nginx/certs/
+
+# Certbot
+certbot/
+
+# --------------------------------
+# Database & Cache
+# --------------------------------
+*.sqlite
+*.sqlite3
+*.db
+
+# Redis dump
+dump.rdb
+
+# --------------------------------
+# Security & Secrets
+# --------------------------------
+# API Keys and secrets
+secrets/
+private/
+*.pem
+*.key
+*.cert
+*.csr
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# --------------------------------
+# Monitoring & Debugging
+# --------------------------------
+# Performance monitoring
+.clinic/
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Heap dumps
+*.heapsnapshot
+
+# --------------------------------
+# Package Manager
+# --------------------------------
+# Yarn
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# NPM
+.npm
+
+# --------------------------------
+# AI & Development Tools
+# --------------------------------
+# AI generated files that should not be committed
+*generated*
+*auto-generated*
+
+# Development scripts
+scripts/dev-*
+scripts/local-*
+
+# --------------------------------
+# Specific to this Chatbot Project
+# --------------------------------
+# WhatsApp integration temp files
+whatsapp-temp/
+media-temp/
+
+# RADE API response cache files
+rade-cache/
+api-cache/
+
+# Generated reports
+reports/generated/
+exports/
+
+# User session data
+sessions/
+user-data/
