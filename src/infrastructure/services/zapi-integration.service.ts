@@ -57,23 +57,91 @@ export class ZapiIntegrationService {
   }
 
   /**
+   * Verifica se a instância é de produção baseada no instanceId
+   */
+  private isProductionInstance(instanceId: string): boolean {
+    const productionInstanceId = process.env.ZAPI_INSTANCE_ID || '3CF34E4D1D8BE0C91D482A268ACD4084';
+    return instanceId === productionInstanceId;
+  }
+
+  /**
+   * Envia mensagem para a instância específica
+   */
+  private async sendMessageToInstance(instanceId: string, phone: string, message: string): Promise<void> {
+    if (this.isProductionInstance(instanceId)) {
+      // Usar configuração padrão para produção
+      await this.zapiService.sendTextMessage(phone, message);
+    } else {
+      // Para instância de teste, usar configuração específica
+      await this.sendMessageToTestInstance(instanceId, phone, message);
+    }
+  }
+
+  /**
+   * Envia mensagem para instância de teste
+   */
+  private async sendMessageToTestInstance(instanceId: string, phone: string, message: string): Promise<void> {
+    const testToken = process.env.ZAPI_TEST_TOKEN;
+    const testClientToken = process.env.ZAPI_TEST_CLIENT_TOKEN;
+    const baseUrl = process.env.ZAPI_BASE_URL || 'https://api.z-api.io';
+
+    if (!testToken) {
+      this.logger.warn(`Token de teste não configurado para instância ${instanceId}. Usando configuração padrão.`);
+      await this.zapiService.sendTextMessage(phone, message);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/instances/${instanceId}/token/${testToken}/send-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Client-Token': testClientToken || '',
+        },
+        body: JSON.stringify({
+          phone,
+          message,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      this.logger.log(`Mensagem enviada para instância de teste ${instanceId}: ${phone}`);
+    } catch (error) {
+      this.logger.error(`Erro enviando mensagem para instância de teste ${instanceId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Process incoming WhatsApp message
    */
   async processIncomingMessage(webhookData: ZapiWebhookMessage): Promise<void> {
     const phone = webhookData.phone;
     const message = webhookData.text?.message || '';
+    const instanceId = webhookData.instanceId;
 
-    this.logger.log(`Mensagem de ${phone}: ${message}`);
+    this.logger.log(`Mensagem de ${phone} (instância: ${instanceId}): ${message}`);
+
+    // Verificar se é instância de produção ou teste
+    const isProductionInstance = this.isProductionInstance(instanceId);
+    
+    if (!isProductionInstance) {
+      this.logger.log(`🧪 INSTÂNCIA DE TESTE detectada: ${instanceId}`);
+      // Para instância de teste, adicionar prefixo nas respostas
+    }
 
     try {
       // Verificar comandos especiais
       if (this.isEndCommand(message)) {
-        await this.handleEndSession(phone);
+        await this.handleEndSession(phone, instanceId);
         return;
       }
 
       if (this.isStartCommand(message)) {
-        await this.handleStartNewSession(phone);
+        await this.handleStartNewSession(phone, instanceId);
         return;
       }
 
@@ -98,11 +166,17 @@ export class ZapiIntegrationService {
         contextData: nextState?.data || session.contextData
       });
       
-      // Adicionar resposta ao histórico
-      this.sessionCache.addMessage(session.sessionId, 'assistant', response);
+      // Adicionar prefixo para instância de teste
+      let finalResponse = response;
+      if (!isProductionInstance) {
+        finalResponse = `🧪 [TESTE] ${response}`;
+      }
       
-      // Enviar resposta via WhatsApp
-      await this.zapiService.sendTextMessage(phone, response);
+      // Adicionar resposta ao histórico
+      this.sessionCache.addMessage(session.sessionId, 'assistant', finalResponse);
+      
+      // Enviar resposta via WhatsApp usando a configuração correta da instância
+      await this.sendMessageToInstance(instanceId, phone, finalResponse);
       
       // Se chegou ao fim do fluxo, finalizar sessão
       if (nextState?.currentState === 'END') {
@@ -249,12 +323,12 @@ export class ZapiIntegrationService {
     
     // Video links mapping
     const videoLinks = {
-      '1': 'https://www.youtube.com/watch?v=video1_cadastro',
-      '2': 'https://www.youtube.com/watch?v=video2_agendamento',
-      '3': 'https://www.youtube.com/watch?v=video3_iniciar_finalizar',
-      '4': 'https://www.youtube.com/watch?v=video4_avaliacao',
-      '5': 'https://www.youtube.com/watch?v=video5_justificar',
-      '6': 'https://www.youtube.com/watch?v=video6_tce',
+      '1': 'https://rade.b-cdn.net/bot/videos/cadastro.mp4',
+      '2': 'https://rade.b-cdn.net/bot/videos/agendamento-atividades.mp4',
+      '3': 'https://rade.b-cdn.net/bot/videos/iniciar-finalizar-atividade.mp4',
+      '4': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
+      '5': 'https://rade.b-cdn.net/bot/videos/justificar-atividade-perdida.mp4',
+      '6': 'https://rade.b-cdn.net/bot/videos/preencher-tce.mp4',
     };
 
     if (videoLinks[choice]) {
@@ -406,7 +480,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     return startCommands.includes(message.toLowerCase().trim());
   }
 
-  private async handleEndSession(phone: string): Promise<void> {
+  private async handleEndSession(phone: string, instanceId?: string): Promise<void> {
     this.sessionCache.endSession(phone);
     
     await this.zapiService.sendTextMessage(
@@ -419,7 +493,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     this.logger.log(`Sessão finalizada para ${phone}`);
   }
 
-  private async handleStartNewSession(phone: string): Promise<void> {
+  private async handleStartNewSession(phone: string, instanceId?: string): Promise<void> {
     // Criar nova sessão (finaliza a anterior se existir)
     const session = this.sessionCache.createNewSession(phone);
     

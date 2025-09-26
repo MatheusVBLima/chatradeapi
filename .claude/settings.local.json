@@ -38,7 +38,14 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(timeout 30 npx ts-node test-search-direct.ts)",
-      "Bash(timeout 60 npx ts-node test-search-final.ts)"
+      "Bash(timeout 60 npx ts-node test-search-final.ts)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote remove:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }

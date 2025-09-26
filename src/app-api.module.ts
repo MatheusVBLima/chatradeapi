@@ -4,10 +4,14 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ChatController } from './infrastructure/controllers/chat.controller';
 import { HybridChatController } from './infrastructure/controllers/hybrid-chat.controller';
+import { TestChatController } from './infrastructure/controllers/test-chat.controller';
+import { TestHybridChatController } from './infrastructure/controllers/test-hybrid-chat.controller';
 import { ReportController } from './infrastructure/controllers/report.controller';
 import { ProcessOpenChatMessageUseCase } from './application/use-cases/process-open-chat-message.use-case';
 import { ProcessClosedChatMessageUseCase } from './application/use-cases/process-closed-chat-message.use-case';
 import { ProcessApiChatMessageUseCase } from './application/use-cases/process-api-chat-message.use-case';
+import { ProcessTestOpenChatMessageUseCase } from './application/use-cases/process-test-open-chat-message.use-case';
+import { ProcessTestClosedChatMessageUseCase } from './application/use-cases/process-test-closed-chat-message.use-case';
 import { ClosedChatFlow } from './domain/flows/closed-chat.flow';
 import { ReportService } from './application/services/report.service';
 import { ApiUserRepository } from './infrastructure/repositories/api-user.repository';
@@ -19,6 +23,10 @@ import { RadeAuthService } from './infrastructure/services/rade-auth.service';
 import { CacheService } from './application/services/cache.service';
 import { MetricsService } from './application/services/metrics.service';
 import { MetricsController } from './infrastructure/controllers/metrics.controller';
+import { SimulationService } from './application/services/simulation.service';
+import { ResumoConversaService } from './application/services/resumo-conversa.service';
+import { SessionCacheService } from './application/services/session-cache.service';
+import { SimulationController } from './infrastructure/controllers/simulation.controller';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -35,17 +43,22 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
       ],
     }),
   ],
-  controllers: [AppController, ChatController, HybridChatController, ReportController, MetricsController],
+  controllers: [AppController, ChatController, HybridChatController, TestChatController, TestHybridChatController, ReportController, MetricsController, SimulationController],
   providers: [
     AppService,
     ProcessOpenChatMessageUseCase,
     ProcessClosedChatMessageUseCase,
     ProcessApiChatMessageUseCase,
+    ProcessTestOpenChatMessageUseCase,
+    ProcessTestClosedChatMessageUseCase,
     ClosedChatFlow,
     ReportService,
     CacheService,
     MetricsService,
     PromptService,
+    SimulationService,
+    ResumoConversaService,
+    SessionCacheService,
     RadeAuthService,
     ApiClientService,
     ApiVirtualAssistanceService,

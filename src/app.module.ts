@@ -4,14 +4,19 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ChatController } from './infrastructure/controllers/chat.controller';
 import { HybridChatController } from './infrastructure/controllers/hybrid-chat.controller';
+import { TestChatController } from './infrastructure/controllers/test-chat.controller';
+import { TestHybridChatController } from './infrastructure/controllers/test-hybrid-chat.controller';
 import { MasterChatController } from './infrastructure/controllers/master-chat.controller';
 import { DebugController } from './infrastructure/controllers/debug.controller';
 import { ReportController } from './infrastructure/controllers/report.controller';
 import { MockOnlyChatController } from './infrastructure/controllers/mock-only-chat.controller';
 import { MetricsController } from './infrastructure/controllers/metrics.controller';
+import { SimulationController } from './infrastructure/controllers/simulation.controller';
 import { ProcessOpenChatMessageUseCase } from './application/use-cases/process-open-chat-message.use-case';
 import { ProcessClosedChatMessageUseCase } from './application/use-cases/process-closed-chat-message.use-case';
 import { ProcessApiChatMessageUseCase } from './application/use-cases/process-api-chat-message.use-case';
+import { ProcessTestOpenChatMessageUseCase } from './application/use-cases/process-test-open-chat-message.use-case';
+import { ProcessTestClosedChatMessageUseCase } from './application/use-cases/process-test-closed-chat-message.use-case';
 import { ClosedChatFlow } from './domain/flows/closed-chat.flow';
 import { ReportService } from './application/services/report.service';
 import { MockUserRepository } from './infrastructure/repositories/mock-user.repository';
@@ -24,6 +29,8 @@ import { ApiVirtualAssistanceService } from './infrastructure/services/api-virtu
 import { CacheService } from './application/services/cache.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { MetricsService } from './application/services/metrics.service';
+import { SimulationService } from './application/services/simulation.service';
+import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { HealthModule } from './health/health.module';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
 import { RadeAuthService } from './infrastructure/services/rade-auth.service';
@@ -45,17 +52,21 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     HealthModule,
     ZapiModule,
   ],
-  controllers: [AppController, ChatController, HybridChatController, MasterChatController, DebugController, ReportController, MockOnlyChatController, MetricsController],
+  controllers: [AppController, ChatController, HybridChatController, TestChatController, TestHybridChatController, MasterChatController, DebugController, ReportController, MockOnlyChatController, MetricsController, SimulationController],
   providers: [
     AppService,
     ProcessOpenChatMessageUseCase,
     ProcessClosedChatMessageUseCase,
     ProcessApiChatMessageUseCase,
+    ProcessTestOpenChatMessageUseCase,
+    ProcessTestClosedChatMessageUseCase,
     ClosedChatFlow,
     ReportService,
     CacheService,
     SessionCacheService,
     MetricsService,
+    SimulationService,
+    ResumoConversaService,
     PromptService,
     RadeAuthService,
     ApiClientService,

@@ -1,6 +1,9 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ProcessOpenChatMessageUseCase } from '../../application/use-cases/process-open-chat-message.use-case';
 import { ClosedChatState, ChatFlowState } from '../../domain/flows/closed-chat.flow';
+import { SimulationService } from '../../application/services/simulation.service';
+import { ResumoConversaService } from '../../application/services/resumo-conversa.service';
+import { ApiVirtualAssistanceService } from '../services/api-virtual-assistance.service';
 import axios from 'axios';
 
 // Flow states for hybrid chat
@@ -20,6 +23,8 @@ enum HybridChatFlowState {
   AWAITING_AI_CPF = 'AWAITING_AI_CPF',
   AWAITING_AI_PHONE = 'AWAITING_AI_PHONE',
   AI_CHAT = 'AI_CHAT',
+  // Simulation states
+  AWAITING_SIMULATION_PHONE = 'AWAITING_SIMULATION_PHONE',
   END = 'END',
 }
 
@@ -51,9 +56,13 @@ export class HybridChatResponseDto {
 export class HybridChatController {
   private readonly RADE_API_URL = process.env.RADE_API_BASE_URL || 'https://api.stg.radeapp.com';
   private readonly AI_CHAT_URL = process.env.AI_CHAT_URL || 'https://chatbot-api-32gp.onrender.com/chat/open';
+  private readonly SIMULATION_MODE = process.env.SIMULATION_MODE === 'true';
 
   constructor(
     private readonly processOpenChatMessageUseCase: ProcessOpenChatMessageUseCase,
+    private readonly simulationService: SimulationService,
+    private readonly resumoConversaService: ResumoConversaService,
+    private readonly apiVirtualAssistanceService: ApiVirtualAssistanceService,
   ) {}
 
   @Post('hybrid')
@@ -114,6 +123,9 @@ export class HybridChatController {
       case HybridChatFlowState.AI_CHAT:
         return await this.handleAiChat(message, state!);
 
+      case HybridChatFlowState.AWAITING_SIMULATION_PHONE:
+        return await this.handleSimulationPhoneResponse(message, state!);
+
       default:
         return this.handleStart();
     }
@@ -123,7 +135,7 @@ export class HybridChatController {
     const response = `Olá! Bem-vindo ao atendimento RADE! Para começar, me diga qual seu perfil:
 
 1 - Sou Estudante
-2 - Sou Coordenador  
+2 - Sou Coordenador
 3 - Ainda não sou usuário`;
 
     return {
@@ -196,12 +208,12 @@ export class HybridChatController {
   private handleStudentMenuChoice(message: string, state: HybridChatState): { response: string; nextState: HybridChatState } {
     const choice = message.trim();
     const videoLinks = {
-      '1': 'https://www.youtube.com/watch?v=video1_cadastro',
-      '2': 'https://www.youtube.com/watch?v=video2_agendamento',
-      '3': 'https://www.youtube.com/watch?v=video3_iniciar_finalizar',
-      '4': 'https://www.youtube.com/watch?v=video4_avaliacao',
-      '5': 'https://www.youtube.com/watch?v=video5_justificar',
-      '6': 'https://www.youtube.com/watch?v=video6_tce',
+      '1': 'https://rade.b-cdn.net/bot/videos/cadastro.mp4',
+      '2': 'https://rade.b-cdn.net/bot/videos/agendamento-atividades.mp4',
+      '3': 'https://rade.b-cdn.net/bot/videos/iniciar-finalizar-atividade.mp4',
+      '4': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
+      '5': 'https://rade.b-cdn.net/bot/videos/justificar-atividade-perdida.mp4',
+      '6': 'https://rade.b-cdn.net/bot/videos/preencher-tce.mp4',
     };
 
     if (videoLinks[choice]) {
@@ -221,12 +233,15 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     }
 
     if (choice === '7') {
-      // AI option for student - usar CPF já informado
+      // AI option for student - PRODUÇÃO: ir direto para AI_CHAT sem pedir telefone
+      const cpf = state.data.studentCpf || state.data.cpf;
+      const welcomeMessage = `Olá! Como posso ajudá-lo?\n\nDigite "voltar" para retornar ao menu principal ou "sair" para encerrar.`;
+
       return {
-        response: 'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+        response: welcomeMessage,
         nextState: {
-          currentState: HybridChatFlowState.AWAITING_AI_PHONE,
-          data: { ...state.data, userType: 'student' },
+          currentState: HybridChatFlowState.AI_CHAT,
+          data: { ...state.data, userType: 'student', userCpf: cpf, userToken: 'prod_student_authenticated' },
         },
       };
     }
@@ -249,21 +264,16 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     };
   }
 
-  private handleStudentHelpChoice(message: string, state: HybridChatState): { response: string; nextState: HybridChatState } {
+  private async handleStudentHelpChoice(message: string, state: HybridChatState): Promise<{ response: string; nextState: HybridChatState }> {
     const choice = message.trim();
-    if (choice === '1') {
+    if (choice === '1' || choice === '3') {
       return this.showStudentMenu(state.data);
     }
 
     if (choice === '2') {
-      return {
-        response: 'Entendido. Estou transferindo você para um de nossos atendentes para te ajudar melhor.',
-        nextState: { currentState: HybridChatFlowState.END, data: {} },
-      };
-    }
-
-    if (choice === '3') {
-      return this.showStudentMenu(state.data);
+      // PRODUÇÃO: Transferir para atendimento direto (Z-API obtém telefone automaticamente)
+      const telefoneZapi = state.data.userPhone || 'auto_detected'; // Z-API detecta automaticamente
+      return await this.processarTransferencia(telefoneZapi, state.data);
     }
 
     return {
@@ -275,10 +285,10 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
   private handleCoordinatorMenuChoice(message: string, state: HybridChatState): { response: string; nextState: HybridChatState } {
     const choice = message.trim();
     const videoLinks = {
-      '1': 'https://www.youtube.com/watch?v=9AQrYArZ-5k',
-      '2': 'https://www.youtube.com/watch?v=RkjrtSsEDP8',
-      '3': 'https://www.youtube.com/watch?v=TsXVDRszDnY',
-      '4': 'https://www.youtube.com/watch?v=bT1Qnk1B8Oo',
+      '1': 'https://rade.b-cdn.net/bot/videos/validar-rejeitar-atividades.mp4',
+      '2': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
+      '3': 'https://rade.b-cdn.net/bot/videos/rade-profissional-funcionalidades.mp4',
+      '4': 'https://rade.b-cdn.net/bot/videos/gerar-qr-code.mp4',
     };
 
     if (videoLinks[choice]) {
@@ -298,12 +308,15 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     }
 
     if (choice === '5') {
-      // AI option for coordinator - usar CPF já informado
+      // AI option for coordinator - PRODUÇÃO: ir direto para AI_CHAT sem pedir telefone
+      const cpf = state.data.coordinatorCpf || state.data.cpf;
+      const welcomeMessage = `Olá! Como posso ajudá-lo?\n\nDigite "voltar" para retornar ao menu principal ou "sair" para encerrar.`;
+
       return {
-        response: 'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+        response: welcomeMessage,
         nextState: {
-          currentState: HybridChatFlowState.AWAITING_AI_PHONE,
-          data: { ...state.data, userType: 'coordinator' },
+          currentState: HybridChatFlowState.AI_CHAT,
+          data: { ...state.data, userType: 'coordinator', userCpf: cpf, userToken: 'prod_coordinator_authenticated' },
         },
       };
     }
@@ -326,21 +339,16 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     };
   }
 
-  private handleCoordinatorHelpChoice(message: string, state: HybridChatState): { response: string; nextState: HybridChatState } {
+  private async handleCoordinatorHelpChoice(message: string, state: HybridChatState): Promise<{ response: string; nextState: HybridChatState }> {
     const choice = message.trim();
-    if (choice === '1') {
+    if (choice === '1' || choice === '3') {
       return this.showCoordinatorMenu(state.data);
     }
 
     if (choice === '2') {
-      return {
-        response: 'Compreendido. Estou te encaminhando para um de nossos especialistas.',
-        nextState: { currentState: HybridChatFlowState.END, data: {} },
-      };
-    }
-
-    if (choice === '3') {
-      return this.showCoordinatorMenu(state.data);
+      // PRODUÇÃO: Transferir para atendimento direto (Z-API obtém telefone automaticamente)
+      const telefoneZapi = state.data.userPhone || 'auto_detected'; // Z-API detecta automaticamente
+      return await this.processarTransferencia(telefoneZapi, state.data);
     }
 
     return {
@@ -531,7 +539,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
       response: `Bem-vindo, coordenador! Como posso ajudar hoje?
 1 - Como validar atividades
 2 - Como realizar avaliação
-3 - Como agendar retroativo
+3 - Como baixar aplicativo para preceptores
 4 - Como gerar QR code
 5 - Conversar com Atendente Virtual
 6 - Voltar ao menu inicial
@@ -541,5 +549,162 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         data,
       },
     };
+  }
+
+  /**
+   * Processa telefone informado no modo simulação
+   */
+  private async handleSimulationPhoneResponse(message: string, state: HybridChatState): Promise<{ response: string; nextState: HybridChatState }> {
+    const telefone = message.trim().replace(/\D/g, ''); // Remove caracteres não numéricos
+
+    if (telefone.length < 10 || telefone.length > 11) {
+      return {
+        response: 'Número de telefone inválido. Por favor, informe um número válido com DDD (exemplo: 11999999999):',
+        nextState: state
+      };
+    }
+
+    // Processa transferência usando o telefone informado
+    return await this.processarTransferencia(telefone, state.data);
+  }
+
+  /**
+   * Processa a transferência para atendimento (simulação ou Z-API)
+   */
+  private async processarTransferencia(telefone: string, stateData: any): Promise<{ response: string; nextState: HybridChatState }> {
+    try {
+      console.log(`[HYBRID] Processando transferência para telefone: ${telefone}`);
+
+      // 1. Buscar dados do usuário via API RADE
+      const dadosUsuario = await this.buscarDadosUsuarioCompletos(stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf);
+
+      if (!dadosUsuario) {
+        return {
+          response: 'Erro ao buscar seus dados. Tente novamente mais tarde.',
+          nextState: { currentState: HybridChatFlowState.END, data: {} }
+        };
+      }
+
+      // 2. Identificar universidade
+      const universidade = dadosUsuario.organizationsAndCourses?.[0]?.organizationName;
+
+      if (!universidade) {
+        return {
+          response: 'Não conseguimos identificar sua universidade. Entre em contato pelo telefone.',
+          nextState: { currentState: HybridChatFlowState.END, data: {} }
+        };
+      }
+
+      // 3. Gerar resumo da conversa com contexto específico
+      const contextoConversa = this.montarContextoConversa(stateData);
+      const resumoConversa = await this.resumoConversaService.gerarResumoComContexto(telefone, contextoConversa);
+
+      // 4. Adicionar à fila de atendimento
+      const chamado = await this.simulationService.adicionarChamadoFila({
+        telefoneUsuario: telefone,
+        nomeUsuario: dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
+        universidade: universidade,
+        cpfUsuario: stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
+        resumoConversa: resumoConversa
+      });
+
+      // 5. Resposta para o usuário
+      const nomeAtendente = this.simulationService.getAtendentePorUniversidade(universidade)?.nome || 'um atendente';
+
+      const response = `✅ Transferência realizada com sucesso!
+
+📋 Você foi adicionado à fila de atendimento da ${universidade}
+👨‍💼 Atendente responsável: ${nomeAtendente}
+📊 Sua posição na fila: ${chamado.posicaoAtual}
+⏱️ Tempo estimado: ${chamado.posicaoAtual * 3-5} minutos
+
+${nomeAtendente} entrará em contato em breve através deste número: ${telefone}
+
+O atendimento será encerrado agora. Aguarde o contato!`;
+
+      console.log(`[HYBRID] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`);
+
+      return {
+        response,
+        nextState: { currentState: HybridChatFlowState.END, data: {} }
+      };
+
+    } catch (error) {
+      console.error('[HYBRID] Erro na transferência:', error);
+      return {
+        response: 'Erro interno na transferência. Tente novamente mais tarde.',
+        nextState: { currentState: HybridChatFlowState.END, data: {} }
+      };
+    }
+  }
+
+  /**
+   * Busca dados completos do usuário na API RADE
+   */
+  private async buscarDadosUsuarioCompletos(cpf: string): Promise<any> {
+    try {
+      // Tenta primeiro como estudante
+      try {
+        const dadosEstudante = await this.apiVirtualAssistanceService.getStudentInfo(cpf);
+        console.log(`[HYBRID] Dados de estudante encontrados: ${dadosEstudante.studentName}`);
+        return dadosEstudante;
+      } catch (error) {
+        console.log(`[HYBRID] CPF não é estudante, tentando como coordenador...`);
+      }
+
+      // Tenta como coordenador
+      try {
+        const dadosCoordenador = await this.apiVirtualAssistanceService.getCoordinatorInfo(cpf);
+        console.log(`[HYBRID] Dados de coordenador encontrados: ${dadosCoordenador.coordinatorName}`);
+        return dadosCoordenador;
+      } catch (error) {
+        console.log(`[HYBRID] CPF não é coordenador`);
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[HYBRID] Erro ao buscar dados do usuário:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Monta o contexto específico da conversa para melhor resumo
+   */
+  private montarContextoConversa(stateData: any): any {
+    const contexto: any = {
+      tipoUsuario: stateData.userType || 'não informado',
+      cpfInformado: stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
+      telefoneInformado: stateData.userPhone,
+      motivoTransferencia: stateData.transferReason || 'não informado',
+      passos: []
+    };
+
+    // Mapear opções do menu baseadas no que foi guardado no state
+    const menuOpcoes = {
+      'student_help': 'Usuário escolheu assistir vídeos do menu estudante, mas após assistir disse que precisava de mais ajuda',
+      'coordinator_help': 'Usuário escolheu assistir vídeos do menu coordenador, mas após assistir disse que precisava de mais ajuda',
+      'ai_request': 'Usuário solicitou falar com a IA/atendimento direto'
+    };
+
+    if (contexto.motivoTransferencia && menuOpcoes[contexto.motivoTransferencia]) {
+      contexto.detalhes = menuOpcoes[contexto.motivoTransferencia];
+    }
+
+    // Simular histórico baseado no fluxo
+    contexto.historico = [
+      `Usuário: Olá`,
+      `Bot: Olá! Para começar, me diga qual seu perfil: 1 - Sou Estudante, 2 - Sou Coordenador, 3 - Ainda não sou usuário`,
+      `Usuário: ${contexto.tipoUsuario === 'student' ? '1' : contexto.tipoUsuario === 'coordinator' ? '2' : '?'}`,
+      `Bot: Para continuar, por favor, informe seu CPF`,
+      `Usuário: ${contexto.cpfInformado}`,
+      `Bot: Mostrou menu de opções de vídeos`,
+      contexto.detalhes || 'Usuário navegou pelo menu e solicitou ajuda adicional',
+      `Bot: Para transferência, informe seu telefone`,
+      `Usuário: ${contexto.telefoneInformado}`,
+      `Bot: Transferindo para atendimento...`
+    ];
+
+    return contexto;
   }
 }

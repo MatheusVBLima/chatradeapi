@@ -203,12 +203,12 @@ export class ClosedChatFlow {
     const choice = message.trim();
     // In a real scenario, these URLs would come from a config or database
     const videoLinks = {
-      '1': 'https://www.youtube.com/watch?v=video1_cadastro',
-      '2': 'https://www.youtube.com/watch?v=video2_agendamento',
-      '3': 'https://www.youtube.com/watch?v=video3_iniciar_finalizar',
-      '4': 'https://www.youtube.com/watch?v=video4_avaliacao',
-      '5': 'https://www.youtube.com/watch?v=video5_justificar',
-      '6': 'https://www.youtube.com/watch?v=video6_tce',
+      '1': 'https://rade.b-cdn.net/bot/videos/cadastro.mp4',
+      '2': 'https://rade.b-cdn.net/bot/videos/agendamento-atividades.mp4',
+      '3': 'https://rade.b-cdn.net/bot/videos/iniciar-finalizar-atividade.mp4',
+      '4': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
+      '5': 'https://rade.b-cdn.net/bot/videos/justificar-atividade-perdida.mp4',
+      '6': 'https://rade.b-cdn.net/bot/videos/preencher-tce.mp4',
     };
 
     if (videoLinks[choice]) {
@@ -280,10 +280,10 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     const choice = message.trim();
     // In a real scenario, these URLs would come from a config or database
     const videoLinks = {
-      '1': 'https://www.youtube.com/watch?v=9AQrYArZ-5k',
-      '2': 'https://www.youtube.com/watch?v=RkjrtSsEDP8',
-      '3': 'https://www.youtube.com/watch?v=TsXVDRszDnY',
-      '4': 'https://www.youtube.com/watch?v=bT1Qnk1B8Oo',
+      '1': 'https://rade.b-cdn.net/bot/videos/validar-rejeitar-atividades.mp4',
+      '2': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
+      '3': 'https://rade.b-cdn.net/bot/videos/rade-profissional-funcionalidades.mp4',
+      '4': 'https://rade.b-cdn.net/bot/videos/gerar-qr-code.mp4',
     };
 
     if (videoLinks[choice]) {
@@ -353,7 +353,7 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     return `Bem-vindo, professor! Como posso ajudar hoje?
 1 - Como validar atividades
 2 - Como realizar avaliação
-3 - Como agendar retroativo
+3 - Como baixar aplicativo para preceptores
 4 - Como gerar QR code`;
   }
 

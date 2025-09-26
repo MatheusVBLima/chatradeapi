@@ -25,8 +25,8 @@ export class GeminiAIService implements AIService {
     private readonly metricsService: MetricsService,
     ) {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY');
-    this.primaryModel = google('gemini-1.5-flash');
-    this.fallbackModel = google('gemini-1.5-flash-8b');
+    this.primaryModel = google('gemini-2.0-flash-lite');
+    this.fallbackModel = google('gemini-2.0-flash');
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl = configuredBaseUrl || renderExternalUrl || 'http://localhost:3001';
@@ -47,7 +47,7 @@ export class GeminiAIService implements AIService {
 
     // Try primary model first
     try {
-      console.log('[AI] Attempting with primary model (gemini-1.5-flash)');
+      console.log('[AI] Attempting with primary model (gemini-2.0-flash-lite)');
       return await streamText({
         model: this.primaryModel,
         system,
@@ -67,7 +67,7 @@ export class GeminiAIService implements AIService {
       console.log('[AI] Is overload error?', isOverloadError);
 
       if (isOverloadError) {
-        console.log('[AI] Primary model overloaded, falling back to gemini-1.5-flash-8b');
+        console.log('[AI] Primary model overloaded, falling back to gemini-2.0-flash');
         try {
           return await streamText({
             model: this.fallbackModel,
