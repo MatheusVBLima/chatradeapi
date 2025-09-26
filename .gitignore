@@ -44,10 +44,12 @@ pids
 # Test Files & Temporary Code
 # --------------------------------
 # Test scripts (not the test/ folder)
-test-*.ts
-test-*.js
-*test-*.ts
-*test-*.js
+test-hybrid-staging.ts
+test-api-chat.ts
+test-closed-chat.ts
+test-hybrid-staging.ts
+test-open-chat.ts
+scripts/*
 
 # Temporary development files
 temp/
