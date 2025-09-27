@@ -195,9 +195,15 @@ export class GeminiAIService implements AIService {
       // Métricas finais (com tools)
       const endTime = Date.now();
       const responseTime = endTime - startTime;
-      const estimatedOutputTokens = this.estimateTokens(finalResponseText);
-      const totalTokens = estimatedInputTokens + estimatedOutputTokens;
-      const estimatedCost = (estimatedInputTokens * 0.075 + estimatedOutputTokens * 0.30) / 1000000;
+
+      // Use real token counts from AI SDK if available, otherwise estimate
+      const realInputTokens = result.usage?.inputTokens || estimatedInputTokens;
+      const realOutputTokens = result.usage?.outputTokens || this.estimateTokens(finalResponseText);
+      const totalTokens = result.usage?.totalTokens || (realInputTokens + realOutputTokens);
+
+      // Cost calculation for Gemini 2.0 Flash-Lite (Primary) and Gemini 2.0 Flash (Fallback)
+      // Both models: $0.075 per 1M input tokens, $0.30 per 1M output tokens
+      const estimatedCost = (realInputTokens * 0.075 + realOutputTokens * 0.30) / 1000000;
       const toolCallsCount = toolCalls.length;
       const cacheHitsCount = toolResults.filter(tr => {
         // Verificar se usou cache checando se o log foi impresso
@@ -207,12 +213,11 @@ export class GeminiAIService implements AIService {
       console.log('[METRICS] Response time:', responseTime, 'ms');
       console.log('[METRICS] Tool calls made:', toolCallsCount);
       console.log('[METRICS] Cache hits:', cacheHitsCount);
-      console.log('[METRICS] Estimated output tokens:', estimatedOutputTokens);
-      console.log('[METRICS] Total estimated tokens:', totalTokens);
+      console.log('[METRICS] Real tokens used - Input:', realInputTokens, 'Output:', realOutputTokens, 'Total:', totalTokens);
       console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
-      
+
       // Gravar métrica
-      this.recordMetric(actor, userMessage, responseTime, estimatedInputTokens, estimatedOutputTokens, totalTokens, estimatedCost, toolCalls.map(tc => tc.toolName), cacheHitsCount, false);
+      this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, toolCalls.map(tc => tc.toolName), cacheHitsCount, false);
       
       return finalResponseText;
     }
@@ -227,17 +232,22 @@ export class GeminiAIService implements AIService {
     // Métricas finais (sem tools)
     const endTime = Date.now();
     const responseTime = endTime - startTime;
-    const estimatedOutputTokens = this.estimateTokens(textContent);
-    const totalTokens = estimatedInputTokens + estimatedOutputTokens;
-    const estimatedCost = (estimatedInputTokens * 0.075 + estimatedOutputTokens * 0.30) / 1000000;
+
+    // Use real token counts from AI SDK if available, otherwise estimate
+    const realInputTokens = result.usage?.inputTokens || estimatedInputTokens;
+    const realOutputTokens = result.usage?.outputTokens || this.estimateTokens(textContent);
+    const totalTokens = result.usage?.totalTokens || (realInputTokens + realOutputTokens);
+
+    // Cost calculation for Gemini 2.0 Flash-Lite (Primary) and Gemini 2.0 Flash (Fallback)
+    // Both models: $0.075 per 1M input tokens, $0.30 per 1M output tokens
+    const estimatedCost = (realInputTokens * 0.075 + realOutputTokens * 0.30) / 1000000;
     
     console.log('[METRICS] Response time:', responseTime, 'ms');
-    console.log('[METRICS] Estimated output tokens:', estimatedOutputTokens);
-    console.log('[METRICS] Total estimated tokens:', totalTokens);
+    console.log('[METRICS] Real tokens used - Input:', realInputTokens, 'Output:', realOutputTokens, 'Total:', totalTokens);
     console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
-    
+
     // Gravar métrica (sem tools)
-    this.recordMetric(actor, userMessage, responseTime, estimatedInputTokens, estimatedOutputTokens, totalTokens, estimatedCost, [], 0, false);
+    this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, [], 0, false);
     
     return textContent;
   }
