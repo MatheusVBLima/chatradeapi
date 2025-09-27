@@ -79,8 +79,8 @@ export class TwilioWebhookController {
       // Get or create user session
       const session = this.getOrCreateSession(userPhone);
 
-      // Process message through test_hybrid logic directly
-      const chatResponse = await this.processTestHybridMessage(
+      // Process message through test_hybrid logic directly (temporarily using mock)
+      const chatResponse = await this.mockTestHybridResponse(
         userMessage,
         session.state,
       );
@@ -184,53 +184,48 @@ export class TwilioWebhookController {
     }
   }
 
-  private async processTestHybridMessage(
+  private async mockTestHybridResponse(
     message: string,
     state: any,
   ): Promise<any> {
-    try {
-      // Make real HTTP call to /chat/test_hybrid endpoint
-      const baseUrl =
-        process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001';
+    console.log('[TWILIO-WEBHOOK] Processing message with mock logic:', {
+      message,
+      state: state?.currentState || 'START',
+    });
 
-      console.log('[TWILIO-WEBHOOK] Calling test_hybrid with:', {
-        message,
-        state,
-        baseUrl,
-      });
-
-      const response = await axios.post(
-        `${baseUrl}/chat/test_hybrid`,
-        {
-          message,
-          state,
-          channel: 'whatsapp',
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000, // 15 seconds timeout
-        },
-      );
-
-      console.log('[TWILIO-WEBHOOK] test_hybrid response:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('[TWILIO-WEBHOOK] Error calling test_hybrid:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-      });
-
-      // Return fallback response
+    // Simple mock logic for testing
+    if (!state) {
       return {
         response:
-          'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
-        success: false,
-        nextState: null,
+          '[TESTE] Olá! Bem-vindo ao atendimento RADE! Para começar, me diga qual seu perfil:\n\n1 - Sou Estudante\n2 - Sou Coordenador\n3 - Ainda não sou usuário',
+        success: true,
+        nextState: {
+          currentState: 'AWAITING_USER_TYPE',
+          data: {},
+        },
       };
     }
+
+    if (state.currentState === 'AWAITING_USER_TYPE') {
+      if (message === '1') {
+        return {
+          response:
+            'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
+          success: true,
+          nextState: {
+            currentState: 'AWAITING_STUDENT_CPF',
+            data: { userType: 'student' },
+          },
+        };
+      }
+    }
+
+    // Default response
+    return {
+      response: `[TESTE] Você disse: "${message}". Digite "1" para começar.`,
+      success: true,
+      nextState: state,
+    };
   }
 
   // Simple test endpoint
@@ -244,6 +239,35 @@ export class TwilioWebhookController {
       receivedBody: body,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  // Direct test message endpoint
+  @Post('send-test')
+  @HttpCode(HttpStatus.OK)
+  async sendTestMessage(): Promise<any> {
+    console.log('[TWILIO-WEBHOOK] Direct test message endpoint called');
+
+    try {
+      const result = await this.twilioService.sendWhatsAppMessage(
+        'whatsapp:+5581996364880',
+        '🧪 TESTE DIRETO: Se você receber esta mensagem, a integração está funcionando! Responda "ok" para confirmar.',
+      );
+      console.log('[TWILIO-WEBHOOK] Direct test message sent:', result.sid);
+      return {
+        success: true,
+        message: 'Test message sent successfully',
+        sid: result.sid,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('[TWILIO-WEBHOOK] Direct test failed:', error);
+      return {
+        success: false,
+        error: 'Test failed',
+        details: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
   }
 
   // Health check endpoint

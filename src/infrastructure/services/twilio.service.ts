@@ -65,7 +65,19 @@ export class TwilioService {
         body: body,
       });
 
-      console.log(`[TWILIO] Message sent successfully: ${message.sid}`);
+      console.log(`[TWILIO] Message sent successfully:`, {
+        sid: message.sid,
+        status: message.status,
+        to: message.to,
+        from: message.from,
+        dateCreated: message.dateCreated,
+        errorCode: message.errorCode,
+        errorMessage: message.errorMessage,
+        direction: message.direction,
+        price: message.price,
+        priceUnit: message.priceUnit,
+        uri: message.uri,
+      });
       return message;
     } catch (error) {
       console.error('[TWILIO] Error sending message:', error);
