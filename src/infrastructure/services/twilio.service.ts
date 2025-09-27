@@ -14,12 +14,34 @@ export class TwilioService {
     this.whatsappNumber =
       process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886'; // Sandbox number
 
+    console.log('[TWILIO-SERVICE] Constructor called with:', {
+      accountSid: this.accountSid
+        ? `${this.accountSid.substring(0, 8)}...`
+        : 'MISSING',
+      authToken: this.authToken
+        ? `${this.authToken.substring(0, 8)}...`
+        : 'MISSING',
+      whatsappNumber: this.whatsappNumber,
+    });
+
     if (this.accountSid && this.authToken) {
       this.client = twilio(this.accountSid, this.authToken);
+      console.log('[TWILIO-SERVICE] Client initialized successfully');
+    } else {
+      console.error(
+        '[TWILIO-SERVICE] Missing credentials - client not initialized',
+      );
     }
   }
 
   async sendWhatsAppMessage(to: string, body: string): Promise<any> {
+    console.log('[TWILIO-SERVICE] Attempting to send message:', {
+      to,
+      from: this.whatsappNumber,
+      bodyLength: body.length,
+      hasClient: !!this.client,
+    });
+
     if (!this.client) {
       throw new Error('Twilio client not initialized. Check your credentials.');
     }
@@ -27,6 +49,11 @@ export class TwilioService {
     try {
       // Ensure the 'to' number has the whatsapp: prefix
       const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+
+      console.log('[TWILIO-SERVICE] Sending message with formatted params:', {
+        from: this.whatsappNumber,
+        to: formattedTo,
+      });
 
       const message = await this.client.messages.create({
         from: this.whatsappNumber,
