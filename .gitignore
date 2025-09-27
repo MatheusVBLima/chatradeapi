@@ -214,3 +214,6 @@ exports/
 # User session data
 sessions/
 user-data/
+
+test-twilio-integration.js
+TWILIO-SETUP.md

@@ -27,6 +27,7 @@ import { SimulationService } from './application/services/simulation.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { SimulationController } from './infrastructure/controllers/simulation.controller';
+import { TwilioModule } from './infrastructure/modules/twilio.module';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -42,8 +43,18 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
         '.env',
       ],
     }),
+    TwilioModule,
   ],
-  controllers: [AppController, ChatController, HybridChatController, TestChatController, TestHybridChatController, ReportController, MetricsController, SimulationController],
+  controllers: [
+    AppController,
+    ChatController,
+    HybridChatController,
+    TestChatController,
+    TestHybridChatController,
+    ReportController,
+    MetricsController,
+    SimulationController,
+  ],
   providers: [
     AppService,
     ProcessOpenChatMessageUseCase,
@@ -74,7 +85,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     {
       provide: VIRTUAL_ASSISTANCE_SERVICE,
       useClass: ApiVirtualAssistanceService,
-    }
+    },
   ],
 })
 export class AppApiModule {}

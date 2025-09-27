@@ -33,6 +33,7 @@ import { SimulationService } from './application/services/simulation.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { HealthModule } from './health/health.module';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
+import { TwilioModule } from './infrastructure/modules/twilio.module';
 import { RadeAuthService } from './infrastructure/services/rade-auth.service';
 
 const USER_REPOSITORY = 'UserRepository';
@@ -51,8 +52,21 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     }),
     HealthModule,
     ZapiModule,
+    TwilioModule,
   ],
-  controllers: [AppController, ChatController, HybridChatController, TestChatController, TestHybridChatController, MasterChatController, DebugController, ReportController, MockOnlyChatController, MetricsController, SimulationController],
+  controllers: [
+    AppController,
+    ChatController,
+    HybridChatController,
+    TestChatController,
+    TestHybridChatController,
+    MasterChatController,
+    DebugController,
+    ReportController,
+    MockOnlyChatController,
+    MetricsController,
+    SimulationController,
+  ],
   providers: [
     AppService,
     ProcessOpenChatMessageUseCase,
@@ -83,8 +97,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     {
       provide: VIRTUAL_ASSISTANCE_SERVICE,
       useClass: ApiVirtualAssistanceService,
-    }
+    },
   ],
 })
 export class AppModule {}
-
