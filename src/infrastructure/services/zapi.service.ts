@@ -5,11 +5,13 @@ import axios from 'axios';
 export class ZapiService {
   private readonly instanceId: string;
   private readonly token: string;
+  private readonly clientToken: string;
   private readonly baseUrl: string;
 
   constructor() {
     this.instanceId = process.env.ZAPI_INSTANCE_ID || '';
     this.token = process.env.ZAPI_TOKEN || '';
+    this.clientToken = process.env.ZAPI_CLIENT_TOKEN || '';
     this.baseUrl = `https://api.z-api.io/instances/${this.instanceId}/token/${this.token}`;
 
     console.log('[ZAPI-SERVICE] Constructor called with:', {
@@ -17,6 +19,7 @@ export class ZapiService {
         ? `${this.instanceId.substring(0, 8)}...`
         : 'MISSING',
       token: this.token ? `${this.token.substring(0, 8)}...` : 'MISSING',
+      clientToken: this.clientToken ? `${this.clientToken.substring(0, 8)}...` : 'MISSING',
       baseUrl: this.baseUrl,
     });
   }
@@ -36,10 +39,23 @@ export class ZapiService {
         formatted: formattedPhone,
       });
 
-      const response = await axios.post(`${this.baseUrl}/send-text`, {
-        phone: formattedPhone,
-        message: message,
-      });
+      // Standard headers for Z-API requests with client token
+      const headers = {
+        'Content-Type': 'application/json',
+        'Client-Token': this.clientToken,
+      };
+
+      console.log('[ZAPI-SERVICE] Sending with headers:', headers);
+
+
+      const response = await axios.post(
+        `${this.baseUrl}/send-text`,
+        {
+          phone: formattedPhone,
+          message: message,
+        },
+        { headers }
+      );
 
       console.log('[ZAPI] Message sent successfully:', {
         status: response.status,
@@ -60,10 +76,21 @@ export class ZapiService {
   extractMessageData(body: any): { from: string; body: string; to: string } {
     console.log('[ZAPI-SERVICE] Extracting message data from webhook:', body);
 
-    // Z-API webhook format (adjust based on actual format)
+    // Z-API webhook format - text can be object or string
+    let messageText = '';
+    if (body.text) {
+      if (typeof body.text === 'object' && body.text.message) {
+        messageText = body.text.message;
+      } else if (typeof body.text === 'string') {
+        messageText = body.text;
+      }
+    } else {
+      messageText = body.message || body.body || '';
+    }
+
     return {
       from: `whatsapp:+${body.phone || body.from}`, // Normalize to whatsapp: format
-      body: body.text || body.message || body.body || '',
+      body: messageText,
       to: body.instanceId
         ? `whatsapp:+${body.instanceId}`
         : 'whatsapp:+unknown',
@@ -82,6 +109,6 @@ export class ZapiService {
 
   // Check if service is properly configured
   isConfigured(): boolean {
-    return !!(this.instanceId && this.token);
+    return !!(this.instanceId && this.token && this.clientToken);
   }
 }
