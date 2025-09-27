@@ -92,9 +92,10 @@ export class TwilioWebhookController {
       // Send response back via WhatsApp
       if (chatResponse.response) {
         try {
+          console.log('[TWILIO-WEBHOOK] About to send message to:', userPhone);
           await this.twilioService.sendWhatsAppMessage(
             userPhone,
-            chatResponse.response,
+            `[DEBUG] Recebido de ${userPhone}: ${chatResponse.response}`,
           );
           console.log(
             '[TWILIO-WEBHOOK] Message sent successfully to:',
