@@ -27,7 +27,7 @@ import { SimulationService } from './application/services/simulation.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { SimulationController } from './infrastructure/controllers/simulation.controller';
-import { TwilioModule } from './infrastructure/modules/twilio.module';
+import { ZapiModule } from './infrastructure/modules/zapi.module';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -43,7 +43,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
         '.env',
       ],
     }),
-    TwilioModule,
+    ZapiModule,
   ],
   controllers: [
     AppController,

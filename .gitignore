@@ -217,3 +217,5 @@ user-data/
 
 test-twilio-integration.js
 TWILIO-SETUP.md
+
+ZAPI-SETUP.md

@@ -70,7 +70,7 @@ export class ZapiIntegrationService {
   private async sendMessageToInstance(instanceId: string, phone: string, message: string): Promise<void> {
     if (this.isProductionInstance(instanceId)) {
       // Usar configuração padrão para produção
-      await this.zapiService.sendTextMessage(phone, message);
+      await this.zapiService.sendWhatsAppMessage(phone, message);
     } else {
       // Para instância de teste, usar configuração específica
       await this.sendMessageToTestInstance(instanceId, phone, message);
@@ -87,7 +87,7 @@ export class ZapiIntegrationService {
 
     if (!testToken) {
       this.logger.warn(`Token de teste não configurado para instância ${instanceId}. Usando configuração padrão.`);
-      await this.zapiService.sendTextMessage(phone, message);
+      await this.zapiService.sendWhatsAppMessage(phone, message);
       return;
     }
 
@@ -188,7 +188,7 @@ export class ZapiIntegrationService {
     } catch (error) {
       this.logger.error(`Erro processando mensagem de ${phone}:`, error);
       
-      await this.zapiService.sendTextMessage(
+      await this.zapiService.sendWhatsAppMessage(
         phone, 
         '❌ Desculpe, ocorreu um erro. Digite "iniciar" para começar uma nova conversa.'
       );
@@ -483,7 +483,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
   private async handleEndSession(phone: string, instanceId?: string): Promise<void> {
     this.sessionCache.endSession(phone);
     
-    await this.zapiService.sendTextMessage(
+    await this.zapiService.sendWhatsAppMessage(
       phone,
       '👋 Atendimento finalizado com sucesso!\n\n' +
       'Obrigado por usar nosso serviço. ' +
@@ -507,7 +507,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     });
     
     // Enviar mensagem de boas-vindas
-    await this.zapiService.sendTextMessage(phone, response);
+    await this.zapiService.sendWhatsAppMessage(phone, response);
     
     this.logger.log(`Nova sessão iniciada para ${phone}: ${session.sessionId}`);
   }
