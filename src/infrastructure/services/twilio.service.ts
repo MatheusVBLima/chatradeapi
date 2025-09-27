@@ -25,8 +25,12 @@ export class TwilioService {
     });
 
     if (this.accountSid && this.authToken) {
-      this.client = twilio(this.accountSid, this.authToken);
-      console.log('[TWILIO-SERVICE] Client initialized successfully');
+      try {
+        this.client = twilio(this.accountSid.trim(), this.authToken.trim());
+        console.log('[TWILIO-SERVICE] Client initialized successfully');
+      } catch (error) {
+        console.error('[TWILIO-SERVICE] Error initializing client:', error);
+      }
     } else {
       console.error(
         '[TWILIO-SERVICE] Missing credentials - client not initialized',
