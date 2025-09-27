@@ -89,18 +89,19 @@ export class TwilioWebhookController {
       session.state = chatResponse.nextState;
       session.lastActivity = new Date();
 
-      // Send response back via WhatsApp (skip in development)
+      // Send response back via WhatsApp
       if (chatResponse.response) {
-        if (process.env.NODE_ENV === 'production') {
+        try {
           await this.twilioService.sendWhatsAppMessage(
             userPhone,
             chatResponse.response,
           );
-        } else {
-          console.log('[TWILIO-WEBHOOK] Would send message (dev mode):', {
-            to: userPhone,
-            message: chatResponse.response,
-          });
+          console.log(
+            '[TWILIO-WEBHOOK] Message sent successfully to:',
+            userPhone,
+          );
+        } catch (error) {
+          console.error('[TWILIO-WEBHOOK] Error sending message:', error);
         }
       }
 
