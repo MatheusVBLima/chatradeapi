@@ -93,13 +93,25 @@ export class TwilioWebhookController {
       if (chatResponse.response) {
         try {
           console.log('[TWILIO-WEBHOOK] About to send message to:', userPhone);
-          await this.twilioService.sendWhatsAppMessage(
-            userPhone,
-            `[DEBUG] Recebido de ${userPhone}: ${chatResponse.response}`,
+
+          // Converter número para formato com 9 (cadastrado no Twilio)
+          const phoneWith9 = userPhone.replace(
+            'whatsapp:+5581',
+            'whatsapp:+55819',
           );
+          console.log('[TWILIO-WEBHOOK] Converting phone:', {
+            original: userPhone,
+            with9: phoneWith9,
+          });
+
+          await this.twilioService.sendWhatsAppMessage(
+            phoneWith9,
+            `✅ FUNCIONOU! Resposta: ${chatResponse.response}`,
+          );
+
           console.log(
             '[TWILIO-WEBHOOK] Message sent successfully to:',
-            userPhone,
+            phoneWith9,
           );
         } catch (error) {
           console.error('[TWILIO-WEBHOOK] Error sending message:', error);
