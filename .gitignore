@@ -19,6 +19,7 @@
 .env.development
 .env.staging
 .env.production
+env*
 
 # Keep template file
 !.env.example

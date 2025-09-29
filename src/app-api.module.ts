@@ -23,7 +23,7 @@ import { RadeAuthService } from './infrastructure/services/rade-auth.service';
 import { CacheService } from './application/services/cache.service';
 import { MetricsService } from './application/services/metrics.service';
 import { MetricsController } from './infrastructure/controllers/metrics.controller';
-import { SimulationService } from './application/services/simulation.service';
+import { NotificationService } from './application/services/notification.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { SimulationController } from './infrastructure/controllers/simulation.controller';
@@ -67,7 +67,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     CacheService,
     MetricsService,
     PromptService,
-    SimulationService,
+    NotificationService,
     ResumoConversaService,
     SessionCacheService,
     RadeAuthService,

@@ -1,5 +1,18 @@
-import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { SimulationService, NotificacaoAtendente, ChamadoFila, AtendenteConfig } from '../../application/services/simulation.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import {
+  NotificationService,
+  NotificacaoAtendente,
+  ChamadoFila,
+  AtendenteConfig,
+} from '../../application/services/notification.service';
 
 // DTOs
 export class AtenderChamadoDto {
@@ -12,33 +25,41 @@ export class FinalizarChamadoDto {
 
 @Controller('simulation')
 export class SimulationController {
-  constructor(private readonly simulationService: SimulationService) {}
+  constructor(private readonly notificationService: NotificationService) {}
 
   /**
    * Busca notificações para um atendente específico
    */
   @Get('atendente/:telefone/notificacoes')
-  async getNotificacoesAtendente(@Param('telefone') telefone: string): Promise<NotificacaoAtendente[]> {
-    console.log(`[SIMULATION] Buscando notificações para atendente: ${telefone}`);
-    return this.simulationService.getNotificacoesAtendente(telefone);
+  async getNotificacoesAtendente(
+    @Param('telefone') telefone: string,
+  ): Promise<NotificacaoAtendente[]> {
+    console.log(
+      `[SIMULATION] Buscando notificações para atendente: ${telefone}`,
+    );
+    return this.notificationService.getNotificacoesAtendente(telefone);
   }
 
   /**
    * Busca fila de chamados para um atendente específico
    */
   @Get('atendente/:telefone/fila')
-  async getFilaAtendente(@Param('telefone') telefone: string): Promise<ChamadoFila[]> {
+  async getFilaAtendente(
+    @Param('telefone') telefone: string,
+  ): Promise<ChamadoFila[]> {
     console.log(`[SIMULATION] Buscando fila para atendente: ${telefone}`);
-    return this.simulationService.getFilaAtendente(telefone);
+    return this.notificationService.getFilaAtendente(telefone);
   }
 
   /**
    * Busca posição de um usuário na fila
    */
   @Get('usuario/:telefone/posicao')
-  async getPosicaoUsuario(@Param('telefone') telefone: string): Promise<{ posicao: number; universidade: string } | null> {
+  async getPosicaoUsuario(
+    @Param('telefone') telefone: string,
+  ): Promise<{ posicao: number; universidade: string } | null> {
     console.log(`[SIMULATION] Buscando posição do usuário: ${telefone}`);
-    return this.simulationService.getPosicaoUsuarioFila(telefone);
+    return this.notificationService.getPosicaoUsuarioFila(telefone);
   }
 
   /**
@@ -48,10 +69,15 @@ export class SimulationController {
   @HttpCode(HttpStatus.OK)
   async atenderChamado(
     @Param('chamadoId') chamadoId: string,
-    @Body() body: AtenderChamadoDto
+    @Body() body: AtenderChamadoDto,
   ): Promise<{ success: boolean; message: string; chamado?: ChamadoFila }> {
-    console.log(`[SIMULATION] Atendente ${body.telefoneAtendente} assumindo chamado: ${chamadoId}`);
-    return this.simulationService.atenderChamado(chamadoId, body.telefoneAtendente);
+    console.log(
+      `[SIMULATION] Atendente ${body.telefoneAtendente} assumindo chamado: ${chamadoId}`,
+    );
+    return this.notificationService.atenderChamado(
+      chamadoId,
+      body.telefoneAtendente,
+    );
   }
 
   /**
@@ -61,10 +87,15 @@ export class SimulationController {
   @HttpCode(HttpStatus.OK)
   async finalizarChamado(
     @Param('chamadoId') chamadoId: string,
-    @Body() body: FinalizarChamadoDto
+    @Body() body: FinalizarChamadoDto,
   ): Promise<{ success: boolean; message: string }> {
-    console.log(`[SIMULATION] Atendente ${body.telefoneAtendente} finalizando chamado: ${chamadoId}`);
-    return this.simulationService.finalizarChamado(chamadoId, body.telefoneAtendente);
+    console.log(
+      `[SIMULATION] Atendente ${body.telefoneAtendente} finalizando chamado: ${chamadoId}`,
+    );
+    return this.notificationService.finalizarChamado(
+      chamadoId,
+      body.telefoneAtendente,
+    );
   }
 
   /**
@@ -74,9 +105,12 @@ export class SimulationController {
   @HttpCode(HttpStatus.OK)
   async marcarNotificacaoLida(
     @Param('telefone') telefone: string,
-    @Param('notificacaoId') notificacaoId: string
+    @Param('notificacaoId') notificacaoId: string,
   ): Promise<{ success: boolean }> {
-    const sucesso = this.simulationService.marcarNotificacaoLida(telefone, notificacaoId);
+    const sucesso = this.notificationService.marcarNotificacaoLida(
+      telefone,
+      notificacaoId,
+    );
     return { success: sucesso };
   }
 
@@ -87,9 +121,12 @@ export class SimulationController {
   @HttpCode(HttpStatus.OK)
   async removerNotificacao(
     @Param('telefone') telefone: string,
-    @Param('notificacaoId') notificacaoId: string
+    @Param('notificacaoId') notificacaoId: string,
   ): Promise<{ success: boolean }> {
-    const sucesso = this.simulationService.removerNotificacao(telefone, notificacaoId);
+    const sucesso = this.notificationService.removerNotificacao(
+      telefone,
+      notificacaoId,
+    );
     return { success: sucesso };
   }
 
@@ -99,25 +136,31 @@ export class SimulationController {
   @Get('config/atendentes')
   async getConfigAtendentes(): Promise<Record<string, AtendenteConfig>> {
     console.log(`[SIMULATION] Buscando configuração de atendentes`);
-    return this.simulationService.getConfigAtendentes();
+    return this.notificationService.getConfigAtendentes();
   }
 
   /**
    * Busca atendente responsável por uma universidade
    */
   @Get('config/universidade/:universidade/atendente')
-  async getAtendentePorUniversidade(@Param('universidade') universidade: string): Promise<AtendenteConfig | null> {
-    console.log(`[SIMULATION] Buscando atendente para universidade: ${universidade}`);
-    return this.simulationService.getAtendentePorUniversidade(universidade);
+  async getAtendentePorUniversidade(
+    @Param('universidade') universidade: string,
+  ): Promise<AtendenteConfig | null> {
+    console.log(
+      `[SIMULATION] Buscando atendente para universidade: ${universidade}`,
+    );
+    return this.notificationService.getAtendentePorUniversidade(universidade);
   }
 
   /**
    * Busca fila de uma universidade específica
    */
   @Get('universidade/:universidade/fila')
-  async getFilaUniversidade(@Param('universidade') universidade: string): Promise<ChamadoFila[]> {
+  async getFilaUniversidade(
+    @Param('universidade') universidade: string,
+  ): Promise<ChamadoFila[]> {
     console.log(`[SIMULATION] Buscando fila da universidade: ${universidade}`);
-    return this.simulationService.getFilaUniversidade(universidade);
+    return this.notificationService.getFilaUniversidade(universidade);
   }
 
   /**
@@ -126,7 +169,7 @@ export class SimulationController {
   @Get('estatisticas')
   async getEstatisticas() {
     console.log(`[SIMULATION] Buscando estatísticas gerais`);
-    return this.simulationService.getEstatisticas();
+    return this.notificationService.getEstatisticas();
   }
 
   /**
@@ -134,13 +177,13 @@ export class SimulationController {
    */
   @Get('health')
   async healthCheck() {
-    const stats = this.simulationService.getEstatisticas();
+    const stats = this.notificationService.getEstatisticas();
 
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
       mode: 'simulation',
-      ...stats
+      ...stats,
     };
   }
 
@@ -157,7 +200,7 @@ export class SimulationController {
           telefone: '11999999999',
           universidade: 'Wyden Unifavip',
           curso: 'Administração',
-          email: 'r.olisantos@gmail.com'
+          email: 'r.olisantos@gmail.com',
         },
         karla: {
           cpf: '13281598412',
@@ -165,7 +208,7 @@ export class SimulationController {
           telefone: '81997690940',
           universidade: 'Centro Universitário Tabosa de Almeida ASCES-UNITA',
           curso: 'Engenharia Ambiental',
-          email: '2018110030@app.asces.edu.br'
+          email: '2018110030@app.asces.edu.br',
         },
         helaysa: {
           cpf: '70436988470',
@@ -173,8 +216,8 @@ export class SimulationController {
           telefone: '81996565699',
           universidade: 'Prefeitura de Caruaru',
           curso: 'Administração',
-          email: 'helaysasls@outlook.com'
-        }
+          email: 'helaysasls@outlook.com',
+        },
       },
       coordenador: {
         ana: {
@@ -182,23 +225,30 @@ export class SimulationController {
           nome: 'Ana Maraiza de Sousa Silva',
           telefone: '81888888888', // Simulado
           universidade: 'Prefeitura de Caruaru',
-          email: 'ana.maraiza@caruaru.pe.gov.br'
-        }
+          email: 'ana.maraiza@caruaru.pe.gov.br',
+        },
       },
       atendentes: {
         joao: {
           nome: 'João Silva',
           telefone: '11777777777',
-          universidades: ['Wyden Unifavip', 'Centro Universitário Tabosa de Almeida ASCES-UNITA'],
-          especialidades: ['Cadastro', 'Agendamento', 'Avaliações']
+          universidades: [
+            'Wyden Unifavip',
+            'Centro Universitário Tabosa de Almeida ASCES-UNITA',
+          ],
+          especialidades: ['Cadastro', 'Agendamento', 'Avaliações'],
         },
         maria: {
           nome: 'Maria Santos',
           telefone: '11666666666',
           universidades: ['Prefeitura de Caruaru'],
-          especialidades: ['Processos administrativos', 'Documentação', 'Estágios']
-        }
-      }
+          especialidades: [
+            'Processos administrativos',
+            'Documentação',
+            'Estágios',
+          ],
+        },
+      },
     };
   }
 
@@ -217,13 +267,14 @@ export class SimulationController {
 
       return {
         success: true,
-        message: 'Sistema de simulação resetado com sucesso. Todas as filas e notificações foram limpas.'
+        message:
+          'Sistema de simulação resetado com sucesso. Todas as filas e notificações foram limpas.',
       };
     } catch (error) {
       console.error(`[SIMULATION] Erro ao resetar sistema:`, error);
       return {
         success: false,
-        message: 'Erro ao resetar sistema de simulação.'
+        message: 'Erro ao resetar sistema de simulação.',
       };
     }
   }
@@ -236,7 +287,7 @@ export class SimulationController {
     return {
       message: 'pong',
       timestamp: new Date().toISOString(),
-      simulation: true
+      simulation: true,
     };
   }
 }

@@ -1,7 +1,10 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ProcessTestOpenChatMessageUseCase } from '../../application/use-cases/process-test-open-chat-message.use-case';
-import { ClosedChatState, ChatFlowState } from '../../domain/flows/closed-chat.flow';
-import { SimulationService } from '../../application/services/simulation.service';
+import {
+  ClosedChatState,
+  ChatFlowState,
+} from '../../domain/flows/closed-chat.flow';
+import { NotificationService } from '../../application/services/notification.service';
 import { ResumoConversaService } from '../../application/services/resumo-conversa.service';
 import { ApiVirtualAssistanceService } from '../services/api-virtual-assistance.service';
 import axios from 'axios';
@@ -54,22 +57,30 @@ export class TestHybridChatResponseDto {
 
 @Controller('chat')
 export class TestHybridChatController {
-  private readonly RADE_API_URL = process.env.RADE_API_BASE_URL || 'https://api.stg.radeapp.com';
-  private readonly AI_CHAT_URL = process.env.AI_CHAT_URL || 'https://chatbot-api-32gp.onrender.com/chat/test_open';
+  private readonly RADE_API_URL =
+    process.env.RADE_API_BASE_URL || 'https://api.stg.radeapp.com';
+  private readonly AI_CHAT_URL =
+    process.env.AI_CHAT_URL ||
+    'https://chatbot-api-32gp.onrender.com/chat/test_open';
   private readonly SIMULATION_MODE = true; // SEMPRE true para teste
 
   constructor(
     private readonly processTestOpenChatMessageUseCase: ProcessTestOpenChatMessageUseCase,
-    private readonly simulationService: SimulationService,
+    private readonly notificationService: NotificationService,
     private readonly resumoConversaService: ResumoConversaService,
     private readonly apiVirtualAssistanceService: ApiVirtualAssistanceService,
   ) {}
 
   @Post('test_hybrid')
   @HttpCode(HttpStatus.OK)
-  async processTestHybridMessage(@Body() request: TestHybridChatRequestDto): Promise<TestHybridChatResponseDto> {
+  async processTestHybridMessage(
+    @Body() request: TestHybridChatRequestDto,
+  ): Promise<TestHybridChatResponseDto> {
     try {
-      console.log('[TEST-HYBRID-CONTROLLER] /chat/test_hybrid called with:', request.message);
+      console.log(
+        '[TEST-HYBRID-CONTROLLER] /chat/test_hybrid called with:',
+        request.message,
+      );
       const result = await this.handle(request.message, request.state || null);
 
       return {
@@ -87,7 +98,10 @@ export class TestHybridChatController {
     }
   }
 
-  private async handle(message: string, state: TestHybridChatState | null): Promise<{ response: string; nextState: TestHybridChatState | null }> {
+  private async handle(
+    message: string,
+    state: TestHybridChatState | null,
+  ): Promise<{ response: string; nextState: TestHybridChatState | null }> {
     const currentState = state?.currentState || TestHybridChatFlowState.START;
 
     switch (currentState) {
@@ -148,12 +162,16 @@ export class TestHybridChatController {
     };
   }
 
-  private handleUserTypeResponse(message: string, state: TestHybridChatState): { response: string; nextState: TestHybridChatState } {
+  private handleUserTypeResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): { response: string; nextState: TestHybridChatState } {
     const choice = message.trim();
 
     if (choice === '1') {
       return {
-        response: 'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
+        response:
+          'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_STUDENT_CPF,
           data: state.data,
@@ -163,7 +181,8 @@ export class TestHybridChatController {
 
     if (choice === '2') {
       return {
-        response: 'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
+        response:
+          'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_COORDINATOR_CPF,
           data: state.data,
@@ -173,7 +192,8 @@ export class TestHybridChatController {
 
     if (choice === '3') {
       return {
-        response: 'Ok. Para realizar seu cadastro inicial, por favor, me diga seu nome completo, CPF, instituição, curso e período, tudo em uma única mensagem.',
+        response:
+          'Ok. Para realizar seu cadastro inicial, por favor, me diga seu nome completo, CPF, instituição, curso e período, tudo em uma única mensagem.',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_NEW_USER_DETAILS,
           data: state.data,
@@ -192,19 +212,32 @@ export class TestHybridChatController {
     };
   }
 
-  private async handleStudentCpfResponse(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleStudentCpfResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const cpf = message.trim();
 
     return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf });
   }
 
-  private async handleCoordinatorCpfResponse(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleCoordinatorCpfResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const cpf = message.trim();
 
-    return this.showCoordinatorMenu({ ...state.data, coordinatorCpf: cpf, cpf: cpf });
+    return this.showCoordinatorMenu({
+      ...state.data,
+      coordinatorCpf: cpf,
+      cpf: cpf,
+    });
   }
 
-  private handleStudentMenuChoice(message: string, state: TestHybridChatState): { response: string; nextState: TestHybridChatState } {
+  private handleStudentMenuChoice(
+    message: string,
+    state: TestHybridChatState,
+  ): { response: string; nextState: TestHybridChatState } {
     const choice = message.trim();
     const videoLinks = {
       '1': 'https://rade.b-cdn.net/bot/videos/cadastro.mp4',
@@ -213,6 +246,15 @@ export class TestHybridChatController {
       '4': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
       '5': 'https://rade.b-cdn.net/bot/videos/justificar-atividade-perdida.mp4',
       '6': 'https://rade.b-cdn.net/bot/videos/preencher-tce.mp4',
+    };
+
+    const menuNames = {
+      '1': 'Como fazer meu cadastro',
+      '2': 'Como agendar minhas atividades',
+      '3': 'Como iniciar e finalizar atividade',
+      '4': 'Como fazer uma avaliação',
+      '5': 'Como justificar atividade perdida',
+      '6': 'Como preencher meu TCE',
     };
 
     if (videoLinks[choice]) {
@@ -226,7 +268,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
         response,
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_STUDENT_HELP_CHOICE,
-          data: state.data,
+          data: { ...state.data, lastMenuOption: menuNames[choice] },
         },
       };
     }
@@ -234,7 +276,8 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     if (choice === '7') {
       // AI option for student - MANTER validação de telefone no teste
       return {
-        response: 'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+        response:
+          'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
           data: { ...state.data, userType: 'student' },
@@ -248,7 +291,8 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
 
     if (choice === '9') {
       return {
-        response: 'Ok, estou encerrando nosso atendimento. Se precisar de algo mais, basta me chamar!',
+        response:
+          'Ok, estou encerrando nosso atendimento. Se precisar de algo mais, basta me chamar!',
         nextState: { currentState: TestHybridChatFlowState.END, data: {} },
       };
     }
@@ -259,7 +303,10 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     };
   }
 
-  private async handleStudentHelpChoice(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleStudentHelpChoice(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const choice = message.trim();
     if (choice === '1' || choice === '3') {
       return this.showStudentMenu(state.data);
@@ -268,27 +315,43 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     if (choice === '2') {
       // SEMPRE pedir telefone no modo teste
       return {
-        response: 'Para continuar com a transferência, por favor informe seu número de telefone (com DDD, exemplo: 11999999999):',
+        response:
+          'Para continuar com a transferência, por favor informe seu número de telefone (com DDD, exemplo: 11999999999):',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_SIMULATION_PHONE,
-          data: { ...state.data, transferReason: 'student_help' }
-        }
+          data: {
+            ...state.data,
+            transferReason: 'student_help',
+            lastMenuOption: state.data.lastMenuOption || 'menu estudante',
+          },
+        },
       };
     }
 
     return {
-      response: 'Resposta inválida. Por favor, escolha uma das opções (1, 2 ou 3).',
+      response:
+        'Resposta inválida. Por favor, escolha uma das opções (1, 2 ou 3).',
       nextState: state,
     };
   }
 
-  private handleCoordinatorMenuChoice(message: string, state: TestHybridChatState): { response: string; nextState: TestHybridChatState } {
+  private handleCoordinatorMenuChoice(
+    message: string,
+    state: TestHybridChatState,
+  ): { response: string; nextState: TestHybridChatState } {
     const choice = message.trim();
     const videoLinks = {
       '1': 'https://rade.b-cdn.net/bot/videos/validar-rejeitar-atividades.mp4',
       '2': 'https://rade.b-cdn.net/bot/videos/como-avaliar-grupo.mp4',
       '3': 'https://rade.b-cdn.net/bot/videos/rade-profissional-funcionalidades.mp4',
       '4': 'https://rade.b-cdn.net/bot/videos/gerar-qr-code.mp4',
+    };
+
+    const menuNames = {
+      '1': 'Como validar atividades',
+      '2': 'Como realizar avaliação',
+      '3': 'Como baixar aplicativo para preceptores',
+      '4': 'Como gerar QR code',
     };
 
     if (videoLinks[choice]) {
@@ -301,8 +364,9 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
       return {
         response,
         nextState: {
-          currentState: TestHybridChatFlowState.AWAITING_COORDINATOR_HELP_CHOICE,
-          data: state.data,
+          currentState:
+            TestHybridChatFlowState.AWAITING_COORDINATOR_HELP_CHOICE,
+          data: { ...state.data, lastMenuOption: menuNames[choice] },
         },
       };
     }
@@ -310,7 +374,8 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     if (choice === '5') {
       // AI option for coordinator - MANTER validação de telefone no teste
       return {
-        response: 'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+        response:
+          'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
           data: { ...state.data, userType: 'coordinator' },
@@ -330,12 +395,16 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     }
 
     return {
-      response: 'Opção inválida. Por favor, escolha um número do menu de coordenador.',
+      response:
+        'Opção inválida. Por favor, escolha um número do menu de coordenador.',
       nextState: state,
     };
   }
 
-  private async handleCoordinatorHelpChoice(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleCoordinatorHelpChoice(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const choice = message.trim();
     if (choice === '1' || choice === '3') {
       return this.showCoordinatorMenu(state.data);
@@ -344,23 +413,33 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     if (choice === '2') {
       // SEMPRE pedir telefone no modo teste
       return {
-        response: 'Para continuar com a transferência, por favor informe seu número de telefone (com DDD, exemplo: 11999999999):',
+        response:
+          'Para continuar com a transferência, por favor informe seu número de telefone (com DDD, exemplo: 11999999999):',
         nextState: {
           currentState: TestHybridChatFlowState.AWAITING_SIMULATION_PHONE,
-          data: { ...state.data, transferReason: 'coordinator_help' }
-        }
+          data: {
+            ...state.data,
+            transferReason: 'coordinator_help',
+            lastMenuOption: state.data.lastMenuOption || 'menu coordenador',
+          },
+        },
       };
     }
 
     return {
-      response: 'Resposta inválida. Por favor, escolha uma das opções (1, 2 ou 3).',
+      response:
+        'Resposta inválida. Por favor, escolha uma das opções (1, 2 ou 3).',
       nextState: state,
     };
   }
 
-  private handleNewUserDetails(message: string, state: TestHybridChatState): { response: string; nextState: TestHybridChatState } {
+  private handleNewUserDetails(
+    message: string,
+    state: TestHybridChatState,
+  ): { response: string; nextState: TestHybridChatState } {
     return {
-      response: 'Obrigado! Seus dados foram recebidos e em breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.',
+      response:
+        'Obrigado! Seus dados foram recebidos e em breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.',
       nextState: {
         currentState: TestHybridChatFlowState.END,
         data: {},
@@ -368,7 +447,10 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     };
   }
 
-  private async handleAiPhoneResponse(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleAiPhoneResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const phone = message.trim();
 
     if (phone.toLowerCase() === 'sair') {
@@ -388,7 +470,8 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     }
 
     const userType = state.data.userType;
-    const cpf = state.data.studentCpf || state.data.coordinatorCpf || state.data.userCpf;
+    const cpf =
+      state.data.studentCpf || state.data.coordinatorCpf || state.data.userCpf;
 
     if (!userType || !cpf) {
       return {
@@ -419,7 +502,10 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
     };
   }
 
-  private async handleAiChat(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleAiChat(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     if (message.toLowerCase().trim() === 'sair') {
       return {
         response: 'Atendimento encerrado. Obrigado!',
@@ -460,7 +546,10 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
 
       let fullResponse = result.response;
 
-      if (result.response.includes('http://localhost:3001/reports/') || result.response.includes('https://api.stg.radeapp.com/reports/')) {
+      if (
+        result.response.includes('http://localhost:3001/reports/') ||
+        result.response.includes('https://api.stg.radeapp.com/reports/')
+      ) {
         fullResponse += `\n\n📎 [TESTE] Link para download gerado. Copie o link acima e cole no navegador.`;
       }
 
@@ -476,29 +565,35 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     }
   }
 
-  private async authenticateUser(cpf: string, phone: string, userType: string): Promise<{ token: string | null; userData: any }> {
+  private async authenticateUser(
+    cpf: string,
+    phone: string,
+    userType: string,
+  ): Promise<{ token: string | null; userData: any }> {
     try {
       const endpoint = userType === 'student' ? 'students' : 'coordinators';
-      const radeToken = process.env.RADE_API_TOKEN || 'JQiFrDkkM5eNKtLxwNKzZoga0xkeRDAZ';
+      const radeToken =
+        process.env.RADE_API_TOKEN || 'JQiFrDkkM5eNKtLxwNKzZoga0xkeRDAZ';
 
       const response = await axios.get(
         `${this.RADE_API_URL}/virtual-assistance/${endpoint}/${cpf}`,
         {
           headers: {
-            'Authorization': radeToken,
-            'Content-Type': 'application/json'
-          }
-        }
+            Authorization: radeToken,
+            'Content-Type': 'application/json',
+          },
+        },
       );
 
       if (response.data) {
-        const userPhone = response.data.studentPhone || response.data.coordinatorPhone || '';
+        const userPhone =
+          response.data.studentPhone || response.data.coordinatorPhone || '';
         const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
 
         if (normalizePhone(userPhone) === normalizePhone(phone)) {
           return {
             token: `test_${userType}_authenticated`,
-            userData: response.data
+            userData: response.data,
           };
         } else {
           return { token: null, userData: null };
@@ -510,7 +605,10 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     }
   }
 
-  private showStudentMenu(data: any): { response: string; nextState: TestHybridChatState } {
+  private showStudentMenu(data: any): {
+    response: string;
+    nextState: TestHybridChatState;
+  } {
     return {
       response: `[TESTE] Aqui estão as opções que posso te ajudar:
 1 - Como fazer meu cadastro
@@ -529,7 +627,10 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     };
   }
 
-  private showCoordinatorMenu(data: any): { response: string; nextState: TestHybridChatState } {
+  private showCoordinatorMenu(data: any): {
+    response: string;
+    nextState: TestHybridChatState;
+  } {
     return {
       response: `[TESTE] Bem-vindo, coordenador! Como posso ajudar hoje?
 1 - Como validar atividades
@@ -546,77 +647,108 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     };
   }
 
-  private async handleSimulationPhoneResponse(message: string, state: TestHybridChatState): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async handleSimulationPhoneResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     const telefone = message.trim().replace(/\D/g, '');
 
     if (telefone.length < 10 || telefone.length > 11) {
       return {
-        response: 'Número de telefone inválido. Por favor, informe um número válido com DDD (exemplo: 11999999999):',
-        nextState: state
+        response:
+          'Número de telefone inválido. Por favor, informe um número válido com DDD (exemplo: 11999999999):',
+        nextState: state,
       };
     }
 
     return await this.processarTransferencia(telefone, state.data);
   }
 
-  private async processarTransferencia(telefone: string, stateData: any): Promise<{ response: string; nextState: TestHybridChatState }> {
+  private async processarTransferencia(
+    telefone: string,
+    stateData: any,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
     try {
-      console.log(`[TEST-HYBRID] Processando transferência para telefone: ${telefone}`);
+      console.log(
+        `[TEST-HYBRID] Processando transferência para telefone: ${telefone}`,
+      );
 
-      const dadosUsuario = await this.buscarDadosUsuarioCompletos(stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf);
+      const dadosUsuario = await this.buscarDadosUsuarioCompletos(
+        stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
+      );
 
       if (!dadosUsuario) {
         return {
-          response: '[TESTE] Erro ao buscar seus dados. Tente novamente mais tarde.',
-          nextState: { currentState: TestHybridChatFlowState.END, data: {} }
+          response:
+            '[TESTE] Erro ao buscar seus dados. Tente novamente mais tarde.',
+          nextState: { currentState: TestHybridChatFlowState.END, data: {} },
         };
       }
 
-      const universidade = dadosUsuario.organizationsAndCourses?.[0]?.organizationName;
+      const universidade =
+        dadosUsuario.organizationsAndCourses?.[0]?.organizationName;
 
       if (!universidade) {
         return {
-          response: '[TESTE] Não conseguimos identificar sua universidade. Entre em contato pelo telefone.',
-          nextState: { currentState: TestHybridChatFlowState.END, data: {} }
+          response:
+            '[TESTE] Não conseguimos identificar sua universidade. Entre em contato pelo telefone.',
+          nextState: { currentState: TestHybridChatFlowState.END, data: {} },
         };
       }
 
       const contextoConversa = this.montarContextoConversa(stateData);
-      const resumoConversa = await this.resumoConversaService.gerarResumoComContexto(telefone, contextoConversa);
+      const resumoConversa =
+        await this.resumoConversaService.gerarResumoComContexto(
+          telefone,
+          contextoConversa,
+        );
 
-      const chamado = await this.simulationService.adicionarChamadoFila({
+      // Formatar dados completos do usuário conforme solicitado
+      const dadosFormatados = this.formatarDadosUsuarioParaAtendente(
+        dadosUsuario,
+        stateData.lastMenuOption,
+      );
+
+      const chamado = await this.notificationService.adicionarChamadoFila({
         telefoneUsuario: telefone,
-        nomeUsuario: dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
+        nomeUsuario:
+          dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
         universidade: universidade,
-        cpfUsuario: stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
-        resumoConversa: resumoConversa
+        cpfUsuario:
+          stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
+        resumoConversa: resumoConversa,
+        dadosCompletos: dadosFormatados,
       });
 
-      const nomeAtendente = this.simulationService.getAtendentePorUniversidade(universidade)?.nome || 'um atendente';
+      const nomeAtendente =
+        this.notificationService.getAtendentePorUniversidade(universidade)
+          ?.nome || 'um atendente';
 
       const response = `✅ [TESTE] Transferência realizada com sucesso!
 
 📋 Você foi adicionado à fila de atendimento da ${universidade}
 👨‍💼 Atendente responsável: ${nomeAtendente}
 📊 Sua posição na fila: ${chamado.posicaoAtual}
-⏱️ Tempo estimado: ${chamado.posicaoAtual * 3-5} minutos
+⏱️ Tempo estimado: ${chamado.posicaoAtual * 3 - 5} minutos
 
 ${nomeAtendente} entrará em contato em breve através deste número: ${telefone}
 
 O atendimento será encerrado agora. Aguarde o contato!`;
 
-      console.log(`[TEST-HYBRID] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`);
+      console.log(
+        `[TEST-HYBRID] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
+      );
 
       return {
         response,
-        nextState: { currentState: TestHybridChatFlowState.END, data: {} }
+        nextState: { currentState: TestHybridChatFlowState.END, data: {} },
       };
-
     } catch (error) {
       console.error('[TEST-HYBRID] Erro na transferência:', error);
       return {
-        response: '[TESTE] Erro interno na transferência. Tente novamente mais tarde.',
-        nextState: { currentState: TestHybridChatFlowState.END, data: {} }
+        response:
+          '[TESTE] Erro interno na transferência. Tente novamente mais tarde.',
+        nextState: { currentState: TestHybridChatFlowState.END, data: {} },
       };
     }
   }
@@ -624,16 +756,24 @@ O atendimento será encerrado agora. Aguarde o contato!`;
   private async buscarDadosUsuarioCompletos(cpf: string): Promise<any> {
     try {
       try {
-        const dadosEstudante = await this.apiVirtualAssistanceService.getStudentInfo(cpf);
-        console.log(`[TEST-HYBRID] Dados de estudante encontrados: ${dadosEstudante.studentName}`);
+        const dadosEstudante =
+          await this.apiVirtualAssistanceService.getStudentInfo(cpf);
+        console.log(
+          `[TEST-HYBRID] Dados de estudante encontrados: ${dadosEstudante.studentName}`,
+        );
         return dadosEstudante;
       } catch (error) {
-        console.log(`[TEST-HYBRID] CPF não é estudante, tentando como coordenador...`);
+        console.log(
+          `[TEST-HYBRID] CPF não é estudante, tentando como coordenador...`,
+        );
       }
 
       try {
-        const dadosCoordenador = await this.apiVirtualAssistanceService.getCoordinatorInfo(cpf);
-        console.log(`[TEST-HYBRID] Dados de coordenador encontrados: ${dadosCoordenador.coordinatorName}`);
+        const dadosCoordenador =
+          await this.apiVirtualAssistanceService.getCoordinatorInfo(cpf);
+        console.log(
+          `[TEST-HYBRID] Dados de coordenador encontrados: ${dadosCoordenador.coordinatorName}`,
+        );
         return dadosCoordenador;
       } catch (error) {
         console.log(`[TEST-HYBRID] CPF não é coordenador`);
@@ -649,20 +789,26 @@ O atendimento será encerrado agora. Aguarde o contato!`;
   private montarContextoConversa(stateData: any): any {
     const contexto: any = {
       tipoUsuario: stateData.userType || 'não informado',
-      cpfInformado: stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
+      cpfInformado:
+        stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
       telefoneInformado: stateData.userPhone,
       motivoTransferencia: stateData.transferReason || 'não informado',
       modo: 'TESTE',
-      passos: []
+      passos: [],
     };
 
     const menuOpcoes = {
-      'student_help': 'Usuário escolheu assistir vídeos do menu estudante, mas após assistir disse que precisava de mais ajuda',
-      'coordinator_help': 'Usuário escolheu assistir vídeos do menu coordenador, mas após assistir disse que precisava de mais ajuda',
-      'ai_request': 'Usuário solicitou falar com a IA/atendimento direto'
+      student_help:
+        'Usuário escolheu assistir vídeos do menu estudante, mas após assistir disse que precisava de mais ajuda',
+      coordinator_help:
+        'Usuário escolheu assistir vídeos do menu coordenador, mas após assistir disse que precisava de mais ajuda',
+      ai_request: 'Usuário solicitou falar com a IA/atendimento direto',
     };
 
-    if (contexto.motivoTransferencia && menuOpcoes[contexto.motivoTransferencia]) {
+    if (
+      contexto.motivoTransferencia &&
+      menuOpcoes[contexto.motivoTransferencia]
+    ) {
       contexto.detalhes = menuOpcoes[contexto.motivoTransferencia];
     }
 
@@ -673,12 +819,69 @@ O atendimento será encerrado agora. Aguarde o contato!`;
       `Bot: Para continuar, por favor, informe seu CPF`,
       `Usuário: ${contexto.cpfInformado}`,
       `Bot: Mostrou menu de opções de vídeos`,
-      contexto.detalhes || 'Usuário navegou pelo menu e solicitou ajuda adicional',
+      contexto.detalhes ||
+        'Usuário navegou pelo menu e solicitou ajuda adicional',
       `Bot: Para transferência, informe seu telefone`,
       `Usuário: ${contexto.telefoneInformado}`,
-      `Bot: Transferindo para atendimento...`
+      `Bot: Transferindo para atendimento...`,
     ];
 
     return contexto;
+  }
+
+  private formatarDadosUsuarioParaAtendente(
+    dadosUsuario: any,
+    ultimoMenu?: string,
+  ): string {
+    const nome =
+      dadosUsuario.studentName ||
+      dadosUsuario.coordinatorName ||
+      'Nome não disponível';
+    const email =
+      dadosUsuario.studentEmail ||
+      dadosUsuario.coordinatorEmail ||
+      'E-mail não disponível';
+    const telefone =
+      dadosUsuario.studentPhone ||
+      dadosUsuario.coordinatorPhone ||
+      'Telefone não disponível';
+
+    let dadosFormatados = `👤 DADOS DO USUÁRIO:\n`;
+    dadosFormatados += `Nome: ${nome}\n`;
+    dadosFormatados += `E-mail: ${email}\n`;
+    dadosFormatados += `Telefone: ${telefone}\n\n`;
+
+    // Grupos (se for estudante)
+    if (dadosUsuario.groupNames && dadosUsuario.groupNames.length > 0) {
+      dadosFormatados += `📚 GRUPOS:\n`;
+      dadosUsuario.groupNames.forEach((grupo: string) => {
+        dadosFormatados += `• ${grupo}\n`;
+      });
+      dadosFormatados += `\n`;
+    }
+
+    // Organizações e cursos
+    if (
+      dadosUsuario.organizationsAndCourses &&
+      dadosUsuario.organizationsAndCourses.length > 0
+    ) {
+      dadosFormatados += `🏫 INSTITUIÇÕES E CURSOS:\n`;
+      dadosUsuario.organizationsAndCourses.forEach((org: any) => {
+        dadosFormatados += `• ${org.organizationName}\n`;
+        if (org.courseNames && org.courseNames.length > 0) {
+          org.courseNames.forEach((curso: string) => {
+            dadosFormatados += `  - ${curso}\n`;
+          });
+        }
+      });
+      dadosFormatados += `\n`;
+    }
+
+    // Contexto da dificuldade
+    if (ultimoMenu) {
+      dadosFormatados += `❓ CONTEXTO:\nEncontrou dificuldades em: ${ultimoMenu}`;
+    }
+
+    return dadosFormatados;
   }
 }

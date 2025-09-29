@@ -29,7 +29,7 @@ import { ApiVirtualAssistanceService } from './infrastructure/services/api-virtu
 import { CacheService } from './application/services/cache.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { MetricsService } from './application/services/metrics.service';
-import { SimulationService } from './application/services/simulation.service';
+import { NotificationService } from './application/services/notification.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { HealthModule } from './health/health.module';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
@@ -77,7 +77,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     CacheService,
     SessionCacheService,
     MetricsService,
-    SimulationService,
+    NotificationService,
     ResumoConversaService,
     PromptService,
     RadeAuthService,
