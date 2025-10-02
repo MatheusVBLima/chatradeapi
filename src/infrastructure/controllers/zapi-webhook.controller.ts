@@ -194,7 +194,7 @@ export class ZapiWebhookController {
       const response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
         message: message,
         state: state,
-        channel: 'whatsapp',
+        environment: 'mobile',
       });
 
       console.log('[ZAPI-WEBHOOK] test_hybrid response:', {

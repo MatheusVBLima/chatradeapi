@@ -7,6 +7,8 @@ import {
 import { NotificationService } from '../../application/services/notification.service';
 import { ResumoConversaService } from '../../application/services/resumo-conversa.service';
 import { ApiVirtualAssistanceService } from '../services/api-virtual-assistance.service';
+import { GeminiAIService } from '../services/gemini-ai.service';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 import axios from 'axios';
 
 // Flow states for test hybrid chat (same as original)
@@ -45,7 +47,7 @@ interface TestHybridChatState {
 export class TestHybridChatRequestDto {
   message: string;
   state?: TestHybridChatState | null;
-  channel: string;
+  environment: ChatEnvironment;
 }
 
 export class TestHybridChatResponseDto {
@@ -69,6 +71,7 @@ export class TestHybridChatController {
     private readonly notificationService: NotificationService,
     private readonly resumoConversaService: ResumoConversaService,
     private readonly apiVirtualAssistanceService: ApiVirtualAssistanceService,
+    private readonly geminiAiService: GeminiAIService,
   ) {}
 
   @Post('test_hybrid')
@@ -433,18 +436,56 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     };
   }
 
-  private handleNewUserDetails(
+  private async handleNewUserDetails(
     message: string,
     state: TestHybridChatState,
-  ): { response: string; nextState: TestHybridChatState } {
-    return {
-      response:
-        'Obrigado! Seus dados foram recebidos e em breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.',
-      nextState: {
-        currentState: TestHybridChatFlowState.END,
-        data: {},
-      },
-    };
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
+    try {
+      // Extrair instituição usando IA
+      const instituicao = await this.extrairInstituicao(message);
+
+      if (!instituicao) {
+        return {
+          response:
+            '[TESTE] Não consegui identificar sua instituição. Por favor, informe novamente seus dados incluindo o nome completo da instituição.',
+          nextState: state,
+        };
+      }
+
+      // Verificar se há atendente para esta instituição
+      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+
+      if (!atendente) {
+        return {
+          response: `[TESTE] Obrigado pelos seus dados! Infelizmente, a instituição "${instituicao}" não faz parte da nossa lista de atendimento no momento.\n\nPor favor, entre em contato diretamente com sua instituição ou utilize nosso atendimento automático.\n\nO atendimento será encerrado.`,
+          nextState: {
+            currentState: TestHybridChatFlowState.END,
+            data: {},
+          },
+        };
+      }
+
+      // Enviar notificação para atendente
+      await this.enviarDadosNovoUsuario(message, instituicao, atendente);
+
+      return {
+        response: `[TESTE] Obrigado! Seus dados foram recebidos e encaminhados para ${atendente.nome}, responsável pela ${instituicao}.\n\nEm breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.`,
+        nextState: {
+          currentState: TestHybridChatFlowState.END,
+          data: {},
+        },
+      };
+    } catch (error) {
+      console.error('[TEST-HYBRID] Erro ao processar dados de novo usuário:', error);
+      return {
+        response:
+          '[TESTE] Erro ao processar seus dados. Por favor, tente novamente mais tarde.',
+        nextState: {
+          currentState: TestHybridChatFlowState.END,
+          data: {},
+        },
+      };
+    }
   }
 
   private async handleAiPhoneResponse(
@@ -526,8 +567,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
     try {
       const result = await this.processTestOpenChatMessageUseCase.execute({
         message: message,
-        userId: state.data.userCpf,
-        channel: 'web',
+        environment: ChatEnvironment.WEB,
       });
 
       if (!result.success && result.error === 'Actor not found') {
@@ -696,6 +736,16 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         };
       }
 
+      // Verificar se há atendente disponível para esta universidade
+      const atendente = this.notificationService.getAtendentePorUniversidade(universidade);
+
+      if (!atendente) {
+        return {
+          response: `[TESTE] Para a instituição ${universidade}, você deverá tirar suas dúvidas no atendimento automático, pois não temos atendente disponível no momento.\n\nO atendimento será encerrado.`,
+          nextState: { currentState: TestHybridChatFlowState.END, data: {} },
+        };
+      }
+
       const contextoConversa = this.montarContextoConversa(stateData);
       const resumoConversa =
         await this.resumoConversaService.gerarResumoComContexto(
@@ -720,18 +770,9 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         dadosCompletos: dadosFormatados,
       });
 
-      const nomeAtendente =
-        this.notificationService.getAtendentePorUniversidade(universidade)
-          ?.nome || 'um atendente';
-
       const response = `✅ [TESTE] Transferência realizada com sucesso!
 
-📋 Você foi adicionado à fila de atendimento da ${universidade}
-👨‍💼 Atendente responsável: ${nomeAtendente}
-📊 Sua posição na fila: ${chamado.posicaoAtual}
-⏱️ Tempo estimado: ${chamado.posicaoAtual * 3 - 5} minutos
-
-${nomeAtendente} entrará em contato em breve através deste número: ${telefone}
+${atendente.nome} irá entrar em contato com você pelo número ${atendente.telefone}.
 
 O atendimento será encerrado agora. Aguarde o contato!`;
 
@@ -883,5 +924,89 @@ O atendimento será encerrado agora. Aguarde o contato!`;
     }
 
     return dadosFormatados;
+  }
+
+  /**
+   * Extrai o nome da instituição de um texto usando IA
+   */
+  private async extrairInstituicao(mensagem: string): Promise<string | null> {
+    try {
+      const prompt = `Extraia APENAS o nome da instituição de ensino mencionada no texto abaixo.
+
+Lista de instituições válidas:
+- Zarns Salvador
+- Inapós
+- Imepac
+- Zarns Itumbiara
+- Zarns Unesul
+- FAP - Faculdade Paraíso
+- Cet
+- Franco Montoro
+- Unisa
+- UNICEPLAC
+- Faculdade Cathedral
+- IDOMED
+- FTC/ UNEX
+- ASCES
+- INSPIRALI
+- CEUMA
+- MANDIC
+- SÍRIO LIBANÊS (RESIDÊNCIA)
+
+Texto: "${mensagem}"
+
+Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole). Se não encontrar nenhuma instituição da lista, responda apenas "NENHUMA".`;
+
+      const response = await this.geminiAiService.generateResponse(prompt, {} as any);
+      const instituicao = response.trim();
+
+      if (instituicao === 'NENHUMA' || !instituicao) {
+        return null;
+      }
+
+      // Validar se a instituição extraída realmente existe no mapa de atendentes
+      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+      return atendente ? instituicao : null;
+    } catch (error) {
+      console.error('[TEST-HYBRID] Erro ao extrair instituição:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Envia dados do novo usuário para a atendente responsável
+   */
+  private async enviarDadosNovoUsuario(
+    dadosCompletos: string,
+    instituicao: string,
+    atendente: any,
+  ): Promise<void> {
+    try {
+      const dataHora = new Date().toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+
+      const mensagem = `🆕 [TESTE] NOVO CADASTRO - ${instituicao}\n\n📝 DADOS INFORMADOS:\n${dadosCompletos}\n\n🕐 SOLICITADO EM: ${dataHora}`;
+
+      // Envia via NotificationService (que já usa o ZapiService internamente)
+      await this.notificationService['enviarNotificacaoWhatsApp'](atendente, {
+        nomeUsuario: 'Novo Usuário',
+        telefoneUsuario: 'Não informado',
+        universidade: instituicao,
+        dadosCompletos: mensagem,
+      } as any);
+
+      console.log(
+        `[TEST-HYBRID] Dados de novo usuário enviados para ${atendente.nome} - ${instituicao}`,
+      );
+    } catch (error) {
+      console.error('[TEST-HYBRID] Erro ao enviar dados de novo usuário:', error);
+    }
   }
 }

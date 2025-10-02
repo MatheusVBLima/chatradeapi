@@ -13,6 +13,7 @@ import { ProcessApiChatMessageUseCase } from './application/use-cases/process-ap
 import { ProcessTestOpenChatMessageUseCase } from './application/use-cases/process-test-open-chat-message.use-case';
 import { ProcessTestClosedChatMessageUseCase } from './application/use-cases/process-test-closed-chat-message.use-case';
 import { ClosedChatFlow } from './domain/flows/closed-chat.flow';
+import { OpenChatFlow } from './domain/flows/open-chat.flow';
 import { ReportService } from './application/services/report.service';
 import { ApiUserRepository } from './infrastructure/repositories/api-user.repository';
 import { GeminiAIService } from './infrastructure/services/gemini-ai.service';
@@ -63,6 +64,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ProcessTestOpenChatMessageUseCase,
     ProcessTestClosedChatMessageUseCase,
     ClosedChatFlow,
+    OpenChatFlow,
     ReportService,
     CacheService,
     MetricsService,
@@ -74,6 +76,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ApiClientService,
     ApiVirtualAssistanceService,
     ApiUserRepository,
+    GeminiAIService, // Adicionado para ClosedChatFlow
     {
       provide: USER_REPOSITORY,
       useClass: ApiUserRepository,

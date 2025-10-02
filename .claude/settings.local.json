@@ -45,7 +45,14 @@
       "Bash(git remote add:*)",
       "Bash(git add:*)",
       "Bash(git branch:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(awk:*)",
+      "Bash(xargs:*)",
+      "Bash(wmic process where processid=7200 delete:*)",
+      "Bash(wmic process where processid=18780 delete:*)",
+      "Bash(wmic process where processid=11732 delete:*)",
+      "Bash(npm install:*)",
+      "Bash(wmic process where processid=14468 delete:*)"
     ],
     "deny": []
   }

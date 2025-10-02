@@ -2,13 +2,14 @@ import { Injectable, Inject } from '@nestjs/common';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { ClosedChatFlow, ClosedChatState } from '../../domain/flows/closed-chat.flow';
 import { User } from '../../domain/entities/user.entity';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 export interface ProcessTestClosedChatMessageRequest {
   message: string;
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
   state?: ClosedChatState;
 }
 
@@ -44,7 +45,8 @@ export class ProcessTestClosedChatMessageUseCase {
       const { response, nextState } = await this.closedChatFlow.handle(
         request.message,
         request.state ?? null,
-        user ?? undefined
+        user ?? undefined,
+        true // isTestMode = true para test_closed
       );
 
       // Add test prefix to the response

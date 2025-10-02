@@ -9,14 +9,15 @@ import {
 } from '../../application/use-cases/process-test-closed-chat-message.use-case';
 import { ProcessApiChatMessageUseCase } from '../../application/use-cases/process-api-chat-message.use-case';
 import { ClosedChatState } from '../../domain/flows/closed-chat.flow';
+import { OpenChatState } from '../../domain/flows/open-chat.flow';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 // DTO for test open chat
 export class TestOpenChatRequestDto implements ProcessTestOpenChatMessageRequest {
   message: string;
-  userId?: string;
   phone?: string;
-  email?: string;
-  channel: string;
+  state?: OpenChatState;
+  environment: ChatEnvironment;
 }
 
 // DTO for test closed chat
@@ -25,15 +26,15 @@ export class TestClosedChatRequestDto implements ProcessTestClosedChatMessageReq
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
   state?: ClosedChatState;
+  environment: ChatEnvironment;
 }
 
 export class TestChatResponseDto {
   response: string;
   success: boolean;
   error?: string;
-  nextState?: ClosedChatState | null;
+  nextState?: ClosedChatState | OpenChatState | null;
 }
 
 @Controller('chat')
@@ -46,13 +47,14 @@ export class TestChatController {
   @Post('test_open')
   @HttpCode(HttpStatus.OK)
   async processTestOpenMessage(@Body() request: TestOpenChatRequestDto): Promise<TestChatResponseDto> {
-    console.log('[TEST-CONTROLLER] /chat/test_open called with:', request.userId, request.message);
+    console.log('[TEST-CONTROLLER] /chat/test_open called with:', request.message);
     const result = await this.processTestOpenChatMessageUseCase.execute(request);
 
     return {
       response: result.response,
       success: result.success,
-      error: result.error
+      error: result.error,
+      nextState: result.nextState,
     };
   }
 

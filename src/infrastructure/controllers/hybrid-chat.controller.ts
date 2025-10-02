@@ -7,6 +7,8 @@ import {
 import { NotificationService } from '../../application/services/notification.service';
 import { ResumoConversaService } from '../../application/services/resumo-conversa.service';
 import { ApiVirtualAssistanceService } from '../services/api-virtual-assistance.service';
+import { GeminiAIService } from '../services/gemini-ai.service';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 import axios from 'axios';
 
 // Flow states for hybrid chat
@@ -44,8 +46,9 @@ interface HybridChatState {
 // DTOs
 export class HybridChatRequestDto {
   message: string;
+  phone?: string;
   state?: HybridChatState | null;
-  channel: string;
+  environment: ChatEnvironment; // 'web' ou 'mobile'
 }
 
 export class HybridChatResponseDto {
@@ -69,6 +72,7 @@ export class HybridChatController {
     private readonly notificationService: NotificationService,
     private readonly resumoConversaService: ResumoConversaService,
     private readonly apiVirtualAssistanceService: ApiVirtualAssistanceService,
+    private readonly geminiAiService: GeminiAIService,
   ) {}
 
   @Post('hybrid')
@@ -312,7 +316,10 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     if (choice === '2') {
       // PRODUÇÃO: Transferir para atendimento direto (Z-API obtém telefone automaticamente)
       const telefoneZapi = state.data.userPhone || 'auto_detected'; // Z-API detecta automaticamente
-      return await this.processarTransferencia(telefoneZapi, state.data);
+      return await this.processarTransferencia(telefoneZapi, {
+        ...state.data,
+        transferReason: 'student_help',
+      });
     }
 
     return {
@@ -400,7 +407,10 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     if (choice === '2') {
       // PRODUÇÃO: Transferir para atendimento direto (Z-API obtém telefone automaticamente)
       const telefoneZapi = state.data.userPhone || 'auto_detected'; // Z-API detecta automaticamente
-      return await this.processarTransferencia(telefoneZapi, state.data);
+      return await this.processarTransferencia(telefoneZapi, {
+        ...state.data,
+        transferReason: 'coordinator_help',
+      });
     }
 
     return {
@@ -410,18 +420,56 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     };
   }
 
-  private handleNewUserDetails(
+  private async handleNewUserDetails(
     message: string,
     state: HybridChatState,
-  ): { response: string; nextState: HybridChatState } {
-    return {
-      response:
-        'Obrigado! Seus dados foram recebidos e em breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.',
-      nextState: {
-        currentState: HybridChatFlowState.END,
-        data: {},
-      },
-    };
+  ): Promise<{ response: string; nextState: HybridChatState }> {
+    try {
+      // Extrair instituição usando IA
+      const instituicao = await this.extrairInstituicao(message);
+
+      if (!instituicao) {
+        return {
+          response:
+            'Não consegui identificar sua instituição. Por favor, informe novamente seus dados incluindo o nome completo da instituição.',
+          nextState: state,
+        };
+      }
+
+      // Verificar se há atendente para esta instituição
+      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+
+      if (!atendente) {
+        return {
+          response: `Obrigado pelos seus dados! Infelizmente, a instituição "${instituicao}" não faz parte da nossa lista de atendimento no momento.\n\nPor favor, entre em contato diretamente com sua instituição ou utilize nosso atendimento automático.\n\nO atendimento será encerrado.`,
+          nextState: {
+            currentState: HybridChatFlowState.END,
+            data: {},
+          },
+        };
+      }
+
+      // Enviar notificação para atendente
+      await this.enviarDadosNovoUsuario(message, instituicao, atendente);
+
+      return {
+        response: `Obrigado! Seus dados foram recebidos e encaminhados para ${atendente.nome}, responsável pela ${instituicao}.\n\nEm breve entraremos em contato para finalizar seu cadastro. O atendimento será encerrado.`,
+        nextState: {
+          currentState: HybridChatFlowState.END,
+          data: {},
+        },
+      };
+    } catch (error) {
+      console.error('[HYBRID] Erro ao processar dados de novo usuário:', error);
+      return {
+        response:
+          'Erro ao processar seus dados. Por favor, tente novamente mais tarde.',
+        nextState: {
+          currentState: HybridChatFlowState.END,
+          data: {},
+        },
+      };
+    }
   }
 
   private async handleAiPhoneResponse(
@@ -505,7 +553,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       const result = await this.processOpenChatMessageUseCase.execute({
         message: message,
         userId: state.data.userCpf,
-        channel: 'web',
+        environment: ChatEnvironment.WEB,
       });
 
       // If the user is not found in the API, but was authenticated in hybrid flow,
@@ -686,6 +734,16 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         };
       }
 
+      // 2.1. Verificar se há atendente para esta universidade
+      const atendenteDisponivel = this.notificationService.getAtendentePorUniversidade(universidade);
+
+      if (!atendenteDisponivel) {
+        return {
+          response: `Para a instituição ${universidade}, você deverá tirar suas dúvidas no atendimento automático, pois não temos atendente disponível no momento.\n\nPor favor, use a opção "Conversar com Atendente Virtual" no menu principal.\n\nO atendimento será encerrado.`,
+          nextState: { currentState: HybridChatFlowState.END, data: {} },
+        };
+      }
+
       // 3. Gerar resumo da conversa com contexto específico
       const contextoConversa = this.montarContextoConversa(stateData);
       const resumoConversa =
@@ -706,18 +764,9 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
       });
 
       // 5. Resposta para o usuário
-      const nomeAtendente =
-        this.notificationService.getAtendentePorUniversidade(universidade)
-          ?.nome || 'um atendente';
-
       const response = `✅ Transferência realizada com sucesso!
 
-📋 Você foi adicionado à fila de atendimento da ${universidade}
-👨‍💼 Atendente responsável: ${nomeAtendente}
-📊 Sua posição na fila: ${chamado.posicaoAtual}
-⏱️ Tempo estimado: ${chamado.posicaoAtual * 3 - 5} minutos
-
-${nomeAtendente} entrará em contato em breve através deste número: ${telefone}
+${atendenteDisponivel.nome} irá entrar em contato com você pelo número ${atendenteDisponivel.telefone}.
 
 O atendimento será encerrado agora. Aguarde o contato!`;
 
@@ -821,5 +870,89 @@ O atendimento será encerrado agora. Aguarde o contato!`;
     ];
 
     return contexto;
+  }
+
+  /**
+   * Extrai o nome da instituição de um texto usando IA
+   */
+  private async extrairInstituicao(mensagem: string): Promise<string | null> {
+    try {
+      const prompt = `Extraia APENAS o nome da instituição de ensino mencionada no texto abaixo.
+
+Lista de instituições válidas:
+- Zarns Salvador
+- Inapós
+- Imepac
+- Zarns Itumbiara
+- Zarns Unesul
+- FAP - Faculdade Paraíso
+- Cet
+- Franco Montoro
+- Unisa
+- UNICEPLAC
+- Faculdade Cathedral
+- IDOMED
+- FTC/ UNEX
+- ASCES
+- INSPIRALI
+- CEUMA
+- MANDIC
+- SÍRIO LIBANÊS (RESIDÊNCIA)
+
+Texto: "${mensagem}"
+
+Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole). Se não encontrar nenhuma instituição da lista, responda apenas "NENHUMA".`;
+
+      const response = await this.geminiAiService.generateResponse(prompt, {} as any);
+      const instituicao = response.trim();
+
+      if (instituicao === 'NENHUMA' || !instituicao) {
+        return null;
+      }
+
+      // Validar se a instituição extraída realmente existe no mapa de atendentes
+      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+      return atendente ? instituicao : null;
+    } catch (error) {
+      console.error('[HYBRID] Erro ao extrair instituição:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Envia dados do novo usuário para a atendente responsável
+   */
+  private async enviarDadosNovoUsuario(
+    dadosCompletos: string,
+    instituicao: string,
+    atendente: any,
+  ): Promise<void> {
+    try {
+      const dataHora = new Date().toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+
+      const mensagem = `🆕 NOVO CADASTRO - ${instituicao}\n\n📝 DADOS INFORMADOS:\n${dadosCompletos}\n\n🕐 SOLICITADO EM: ${dataHora}`;
+
+      // Envia via NotificationService (que já usa o ZapiService internamente)
+      await this.notificationService['enviarNotificacaoWhatsApp'](atendente, {
+        nomeUsuario: 'Novo Usuário',
+        telefoneUsuario: 'Não informado',
+        universidade: instituicao,
+        dadosCompletos: mensagem,
+      } as any);
+
+      console.log(
+        `[HYBRID] Dados de novo usuário enviados para ${atendente.nome} - ${instituicao}`,
+      );
+    } catch (error) {
+      console.error('[HYBRID] Erro ao enviar dados de novo usuário:', error);
+    }
   }
 }

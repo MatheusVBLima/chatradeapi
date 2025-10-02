@@ -1,12 +1,13 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Delete, Param } from '@nestjs/common';
-import { 
-  ProcessOpenChatMessageUseCase, 
-  ProcessOpenChatMessageRequest 
+import {
+  ProcessOpenChatMessageUseCase,
+  ProcessOpenChatMessageRequest
 } from '../../application/use-cases/process-open-chat-message.use-case';
-import { 
-  ProcessClosedChatMessageUseCase, 
-  ProcessClosedChatMessageRequest 
+import {
+  ProcessClosedChatMessageUseCase,
+  ProcessClosedChatMessageRequest
 } from '../../application/use-cases/process-closed-chat-message.use-case';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 // DTO for open chat
 export class OpenChatRequestDto implements ProcessOpenChatMessageRequest {
@@ -14,7 +15,7 @@ export class OpenChatRequestDto implements ProcessOpenChatMessageRequest {
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
 }
 
 // DTO for closed chat
@@ -23,7 +24,7 @@ export class ClosedChatRequestDto implements ProcessClosedChatMessageRequest {
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
   currentState?: any;
 }
 

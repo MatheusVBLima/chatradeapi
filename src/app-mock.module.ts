@@ -16,6 +16,9 @@ import { MockVirtualAssistanceService } from './infrastructure/services/mock-vir
 import { CacheService } from './application/services/cache.service';
 import { MetricsService } from './application/services/metrics.service';
 import { MetricsController } from './infrastructure/controllers/metrics.controller';
+import { NotificationService } from './application/services/notification.service';
+import { ResumoConversaService } from './application/services/resumo-conversa.service';
+import { ZapiModule } from './infrastructure/modules/zapi.module';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -27,6 +30,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ZapiModule,
   ],
   controllers: [AppController, MockChatController, ReportController, MetricsController],
   providers: [
@@ -41,6 +45,9 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     PromptService,
     MockVirtualAssistanceService,
     MockUserRepository,
+    GeminiAIService, // Adicionado para ClosedChatFlow
+    NotificationService, // Adicionado para ClosedChatFlow
+    ResumoConversaService, // Adicionado para ClosedChatFlow
     {
       provide: USER_REPOSITORY,
       useClass: MockUserRepository,

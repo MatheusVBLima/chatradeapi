@@ -9,6 +9,7 @@ import { PromptService } from '../services/prompt.service';
 import { CacheService } from '../../application/services/cache.service';
 import { MetricsService } from '../../application/services/metrics.service';
 import { ClosedChatFlow } from '../../domain/flows/closed-chat.flow';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 // DTOs
 export class MockOpenChatRequestDto {
@@ -16,7 +17,7 @@ export class MockOpenChatRequestDto {
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
 }
 
 export class MockClosedChatRequestDto {
@@ -24,7 +25,7 @@ export class MockClosedChatRequestDto {
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
   currentState?: any;
 }
 
@@ -39,7 +40,17 @@ export class MockOnlyChatController {
     // Criar instâncias que SEMPRE usam mock
     const mockVirtualService = new MockVirtualAssistanceService();
     const mockUserRepo = new MockUserRepository();
-    const mockClosedFlow = new ClosedChatFlow(mockUserRepo);
+    // Mock NotificationService, ResumoConversaService e GeminiAIService
+    const mockNotificationService = {} as any;
+    const mockResumoConversaService = {} as any;
+    const mockGeminiAIService = {} as any;
+    const mockClosedFlow = new ClosedChatFlow(
+      mockUserRepo,
+      mockNotificationService,
+      mockResumoConversaService,
+      mockGeminiAIService,
+      mockVirtualService,
+    );
     const mockPromptService = new PromptService();
     const mockMetricsService = new MetricsService(this.cacheService);
     const mockAIService = new GeminiAIService(

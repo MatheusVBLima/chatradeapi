@@ -5,13 +5,14 @@ import { AIService } from '../../domain/services/ai.service';
 import { User } from '../../domain/entities/user.entity';
 import { getVirtualAssistanceTools } from './ai-tools';
 import { CoreTool } from 'ai';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 export interface ProcessOpenChatMessageRequest {
   message: string;
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
 }
 
 export interface ProcessOpenChatMessageResponse {

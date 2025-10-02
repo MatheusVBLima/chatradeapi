@@ -1,12 +1,13 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Get, Query } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { HybridChatController } from './hybrid-chat.controller';
-import { 
-  OpenChatRequestDto, 
-  ClosedChatRequestDto, 
-  ChatResponseDto 
+import {
+  OpenChatRequestDto,
+  ClosedChatRequestDto,
+  ChatResponseDto
 } from './chat.controller';
 import { HybridChatRequestDto, HybridChatResponseDto } from './hybrid-chat.controller';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 type ChatMode = 'open' | 'closed' | 'hybrid';
 
@@ -18,7 +19,7 @@ export class MasterChatRequestDto {
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
+  environment: ChatEnvironment;
 }
 
 export class ChatModeResponseDto {
@@ -71,7 +72,7 @@ export class MasterChatController {
             userId: request.userId,
             phone: request.phone,
             email: request.email,
-            channel: request.channel,
+            environment: request.environment,
           };
           const openResult = await this.chatController.processOpenMessage(openRequest);
           return {
@@ -87,7 +88,7 @@ export class MasterChatController {
             userId: request.userId,
             phone: request.phone,
             email: request.email,
-            channel: request.channel,
+            environment: request.environment,
             state: request.state,
           };
           const closedResult = await this.chatController.processClosedMessage(closedRequest);
@@ -102,7 +103,7 @@ export class MasterChatController {
           const hybridRequest: HybridChatRequestDto = {
             message: request.message,
             state: request.state,
-            channel: request.channel,
+            environment: request.environment,
           };
           const hybridResult = await this.hybridChatController.processHybridMessage(hybridRequest);
           return {

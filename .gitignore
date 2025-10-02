@@ -50,6 +50,10 @@ test-api-chat.ts
 test-closed-chat.ts
 test-hybrid-staging.ts
 test-open-chat.ts
+test-closed-staging.ts
+test-open-staging.ts
+test-notification.js
+Retornos-Staging.md
 scripts/*
 
 # Temporary development files
