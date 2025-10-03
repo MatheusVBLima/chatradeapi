@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { validate } from './config/env.validation';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ChatController } from './infrastructure/controllers/chat.controller';
@@ -13,6 +16,7 @@ import { ProcessApiChatMessageUseCase } from './application/use-cases/process-ap
 import { ProcessTestOpenChatMessageUseCase } from './application/use-cases/process-test-open-chat-message.use-case';
 import { ProcessTestClosedChatMessageUseCase } from './application/use-cases/process-test-closed-chat-message.use-case';
 import { ClosedChatFlow } from './domain/flows/closed-chat.flow';
+import { OpenChatFlow } from './domain/flows/open-chat.flow';
 import { ReportService } from './application/services/report.service';
 import { ApiUserRepository } from './infrastructure/repositories/api-user.repository';
 import { GeminiAIService } from './infrastructure/services/gemini-ai.service';
@@ -26,7 +30,6 @@ import { MetricsController } from './infrastructure/controllers/metrics.controll
 import { NotificationService } from './application/services/notification.service';
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { SessionCacheService } from './application/services/session-cache.service';
-import { SimulationController } from './infrastructure/controllers/simulation.controller';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
 
 const USER_REPOSITORY = 'UserRepository';
@@ -42,7 +45,12 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
         '.env.local',
         '.env',
       ],
+      validate,
     }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000, // Time window in milliseconds (1 minute)
+      limit: 30, // Maximum number of requests per ttl window
+    }]),
     ZapiModule,
   ],
   controllers: [
@@ -53,7 +61,6 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     TestHybridChatController,
     ReportController,
     MetricsController,
-    SimulationController,
   ],
   providers: [
     AppService,
@@ -63,6 +70,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ProcessTestOpenChatMessageUseCase,
     ProcessTestClosedChatMessageUseCase,
     ClosedChatFlow,
+    OpenChatFlow,
     ReportService,
     CacheService,
     MetricsService,
@@ -74,6 +82,11 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ApiClientService,
     ApiVirtualAssistanceService,
     ApiUserRepository,
+    GeminiAIService, // Adicionado para ClosedChatFlow
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: USER_REPOSITORY,
       useClass: ApiUserRepository,

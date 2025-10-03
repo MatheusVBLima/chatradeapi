@@ -109,15 +109,15 @@ export class ApiClientService {
 
   async getStudentScheduledActivities(cpf: string): Promise<ScheduledActivity[]> {
     try {
-      console.log(`[API-CLIENT] GET ${this.baseURL}/virtual-assistance/students/scheduled-activities/${cpf}`);
+      this.logger.debug(`GET ${this.baseURL}/virtual-assistance/students/scheduled-activities/${cpf}`);
       const client = await this.createClient();
       const response: AxiosResponse<ScheduledActivity[]> = await client.get(
         `/virtual-assistance/students/scheduled-activities/${cpf}`
       );
-      console.log(`[API-CLIENT] Atividades encontradas: ${response.data.length} atividades`);
+      this.logger.debug(`Atividades encontradas: ${response.data.length} atividades`);
       return response.data;
     } catch (error) {
-      console.log(`[API-CLIENT] Erro estudante: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
+      this.logger.error(`Erro ao buscar atividades agendadas: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
       throw new HttpException(
         `Erro ao buscar atividades agendadas: ${error.message}`,
         HttpStatus.BAD_REQUEST
@@ -127,16 +127,16 @@ export class ApiClientService {
 
   async getStudentProfessionals(cpf: string): Promise<Professional[]> {
     try {
-      console.log(`[API-CLIENT] GET ${this.baseURL}/virtual-assistance/students/professionals/${cpf}`);
+      this.logger.debug(`GET ${this.baseURL}/virtual-assistance/students/professionals/${cpf}`);
       const client = await this.createClient();
       const response: AxiosResponse<Professional[]> = await client.get(
         `/virtual-assistance/students/professionals/${cpf}`
       );
-      console.log(`[API-CLIENT] Profissionais encontrados: ${response.data.length} profissionais`);
-      console.log(`[API-CLIENT] Dados dos profissionais:`, JSON.stringify(response.data, null, 2));
+      this.logger.debug(`Profissionais encontrados: ${response.data.length} profissionais`);
+      this.logger.debug(`Dados dos profissionais: ${JSON.stringify(response.data, null, 2)}`);
       return response.data;
     } catch (error) {
-      console.log(`[API-CLIENT] Erro profissionais estudante: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
+      this.logger.error(`Erro ao buscar profissionais do estudante: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
       throw new HttpException(
         `Erro ao buscar profissionais do estudante: ${error.message}`,
         HttpStatus.BAD_REQUEST
@@ -176,15 +176,15 @@ export class ApiClientService {
 
   async getStudentInfo(cpf: string): Promise<StudentInfo> {
     try {
-      console.log(`[API-CLIENT] GET ${this.baseURL}/virtual-assistance/students/${cpf}`);
+      this.logger.debug(`GET ${this.baseURL}/virtual-assistance/students/${cpf}`);
       const client = await this.createClient();
       const response: AxiosResponse<StudentInfo> = await client.get(
         `/virtual-assistance/students/${cpf}`
       );
-      console.log(`[API-CLIENT] Estudante encontrado: ${response.data.studentName}`);
+      this.logger.debug(`Estudante encontrado: ${response.data.studentName}`);
       return response.data;
     } catch (error) {
-      console.log(`[API-CLIENT] Erro estudante individual: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
+      this.logger.error(`Erro ao buscar estudante: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
       throw new HttpException(
         `Erro ao buscar informações do estudante: ${error.message}`,
         HttpStatus.BAD_REQUEST
@@ -194,15 +194,15 @@ export class ApiClientService {
 
   async getCoordinatorInfo(cpf: string): Promise<CoordinatorInfo> {
     try {
-      console.log(`[API-CLIENT] GET ${this.baseURL}/virtual-assistance/coordinators/${cpf}`);
+      this.logger.debug(`GET ${this.baseURL}/virtual-assistance/coordinators/${cpf}`);
       const client = await this.createClient();
       const response: AxiosResponse<CoordinatorInfo> = await client.get(
         `/virtual-assistance/coordinators/${cpf}`
       );
-      console.log(`[API-CLIENT] Coordenador encontrado: ${response.data.coordinatorName}`);
+      this.logger.debug(`Coordenador encontrado: ${response.data.coordinatorName}`);
       return response.data;
     } catch (error) {
-      console.log(`[API-CLIENT] Erro coordenador: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
+      this.logger.error(`Erro ao buscar coordenador: ${error.response?.status} - ${JSON.stringify(error.response?.data) || error.message}`);
       throw new HttpException(
         `Erro ao buscar informações do coordenador: ${error.message}`,
         HttpStatus.BAD_REQUEST

@@ -58,11 +58,11 @@ export const getVirtualAssistanceTools = (configService: ConfigService) => {
   // Conditionally add generateReport tool only if enabled
   if (reportsEnabled) {
     (tools as any).generateReport = tool({
-      description: 'Gera relatório dos últimos dados consultados. OBRIGATÓRIO para "relatório", "exportar", "PDF", "CSV", "TXT". RETORNA: {downloadUrl: "link_para_download"} ou {error: "mensagem"}.',
+      description: '⚠️ OBRIGATÓRIO quando usuário pedir "relatório"/"PDF"/"CSV"/"TXT"/"exportar"/"download". Gera arquivo dos dados obtidos nas ferramentas anteriores. NUNCA retorne dados formatados sem chamar esta ferramenta quando o usuário pedir arquivo. RETORNA: {downloadUrl: "link_para_download"} ou {error: "mensagem"}.',
       parameters: z.object({
-        format: z.enum(['pdf', 'csv', 'txt']).describe('Formato: pdf, csv ou txt'),
+        format: z.enum(['pdf', 'csv', 'txt']).describe('Formato: pdf (padrão), csv ou txt'),
         cpf: z.string().describe('CPF do usuário logado'),
-        fieldsRequested: z.string().optional().describe('Campos específicos: "nome e email", "apenas telefone", etc. Opcional.'),
+        fieldsRequested: z.string().optional().describe('Campos específicos solicitados pelo usuário (ex: "nome e email"). Opcional.'),
       }),
     });
   }

@@ -26,7 +26,7 @@ export class GeminiAIService implements AIService {
     ) {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY');
     this.primaryModel = google('gemini-2.0-flash-lite');
-    this.fallbackModel = google('gemini-2.0-flash');
+    this.fallbackModel = google('gemini-2.5-flash-lite');
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl = configuredBaseUrl || renderExternalUrl || 'http://localhost:3001';
@@ -45,7 +45,7 @@ export class GeminiAIService implements AIService {
   }): Promise<any> {
     const { system, messages, tools } = params;
 
-    // Try primary model first
+    // Try primary model first (sem retry interno - faremos nosso próprio fallback)
     try {
       console.log('[AI] Attempting with primary model (gemini-2.0-flash-lite)');
       return await streamText({
@@ -53,6 +53,7 @@ export class GeminiAIService implements AIService {
         system,
         messages,
         tools,
+        maxRetries: 0, // Desabilitar retry automático do AI SDK
       });
     } catch (error: any) {
       console.log('[AI] Primary model failed, analyzing error...', error?.name);
@@ -62,18 +63,21 @@ export class GeminiAIService implements AIService {
                             errorMessage.includes('503') ||
                             errorMessage.includes('UNAVAILABLE') ||
                             error?.statusCode === 503 ||
-                            error?.lastError?.statusCode === 503;
+                            error?.lastError?.statusCode === 503 ||
+                            error?.data?.error?.code === 503 ||
+                            error?.data?.error?.status === 'UNAVAILABLE';
 
       console.log('[AI] Is overload error?', isOverloadError);
 
       if (isOverloadError) {
-        console.log('[AI] Primary model overloaded, falling back to gemini-2.0-flash');
+        console.log('[AI] Primary model overloaded, falling back to gemini-2.5-flash-lite');
         try {
           return await streamText({
             model: this.fallbackModel,
             system,
             messages,
             tools,
+            maxRetries: 2, // No fallback, permitir 2 retries
           });
         } catch (fallbackError) {
           console.error('[AI] Both models failed:', fallbackError);
@@ -109,11 +113,43 @@ export class GeminiAIService implements AIService {
     console.log('[METRICS] Available tools:', Object.keys(availableTools).length);
     console.log('[METRICS] Message history length:', trimmedMessages.length);
     
-    const result = await this.callStreamTextWithFallback({
-      system: this.promptService.getSystemPrompt(actor),
-      messages: trimmedMessages,
-      tools: availableTools,
-    });
+    let result;
+    let usedFallback = false;
+
+    // Tentar com modelo primário primeiro
+    try {
+      result = await this.callStreamTextWithFallback({
+        system: this.promptService.getSystemPrompt(actor),
+        messages: trimmedMessages,
+        tools: availableTools,
+      });
+    } catch (primaryError: any) {
+      console.error('[AI] Primary model failed during stream, trying fallback...', primaryError?.name);
+
+      // Detectar erro de overload
+      const errorMessage = JSON.stringify(primaryError);
+      const isOverloadError = errorMessage.includes('overloaded') ||
+                            errorMessage.includes('503') ||
+                            errorMessage.includes('UNAVAILABLE') ||
+                            primaryError?.statusCode === 503 ||
+                            primaryError?.data?.error?.code === 503;
+
+      if (isOverloadError) {
+        console.log('[AI] Overload detected, using fallback model (gemini-2.5-flash-lite)');
+        usedFallback = true;
+
+        // Tentar com modelo fallback
+        result = await streamText({
+          model: this.fallbackModel,
+          system: this.promptService.getSystemPrompt(actor),
+          messages: trimmedMessages,
+          tools: availableTools,
+          maxRetries: 2,
+        });
+      } else {
+        throw primaryError;
+      }
+    }
 
     // The AI SDK stream returns tool calls and text in separate parts.
     let textContent = '';
@@ -127,12 +163,12 @@ export class GeminiAIService implements AIService {
           toolCalls.push(part);
         } else if (part.type === 'error') {
           console.error(`Stream error:`, part.error);
-          
+
           // Handle any unavailable tool error with standardized message
           if ((part.error as any)?.name === 'AI_NoSuchToolError') {
             return 'Desculpe, não posso te ajudar com essa questão. Posso ajudá-lo com informações sobre seus dados acadêmicos, atividades ou preceptores da plataforma RADE.';
           }
-          
+
           throw new Error(`Stream error: ${JSON.stringify(part.error)}`);
         }
       }
@@ -177,9 +213,43 @@ export class GeminiAIService implements AIService {
               console.error('Final stream error:', part.error);
             }
           }
-        } catch (err) {
-          console.error('[AI] Error generating final response after tool results:', err);
-          // Manter fallback como resposta se segunda chamada falhar
+        } catch (secondCallError: any) {
+          console.error('[AI] Second call failed, trying fallback model...', secondCallError?.name);
+
+          // Detectar erro de overload na segunda chamada
+          const errorMessage = JSON.stringify(secondCallError);
+          const isOverloadError = errorMessage.includes('overloaded') ||
+                                errorMessage.includes('503') ||
+                                errorMessage.includes('UNAVAILABLE') ||
+                                secondCallError?.statusCode === 503 ||
+                                secondCallError?.data?.error?.code === 503;
+
+          if (isOverloadError) {
+            console.log('[AI] Second call overloaded, using fallback model');
+            usedFallback = true;
+
+            try {
+              const fallbackResult = await streamText({
+                model: this.fallbackModel,
+                system: this.promptService.getSystemPrompt(actor),
+                messages: trimmedMessages,
+                maxRetries: 2,
+              });
+              for await (const part of fallbackResult.fullStream) {
+                if (part.type === 'text-delta') {
+                  finalResponseText += part.textDelta;
+                } else if (part.type === 'error') {
+                  console.error('Fallback stream error:', part.error);
+                }
+              }
+            } catch (fallbackError) {
+              console.error('[AI] Fallback also failed, keeping intelligent fallback response');
+              // Manter fallback como resposta se tudo falhar
+            }
+          } else {
+            // Se não for erro de overload, manter resposta de fallback inteligente
+            console.error('[AI] Non-overload error, keeping intelligent fallback response');
+          }
         }
       } else {
         console.log('[AI] Using intelligent fallback, skipping second AI call');
@@ -217,7 +287,7 @@ export class GeminiAIService implements AIService {
       console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
 
       // Gravar métrica
-      this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, toolCalls.map(tc => tc.toolName), cacheHitsCount, false);
+      this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, toolCalls.map(tc => tc.toolName), cacheHitsCount, usedFallback);
       
       return finalResponseText;
     }
@@ -247,7 +317,7 @@ export class GeminiAIService implements AIService {
     console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
 
     // Gravar métrica (sem tools)
-    this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, [], 0, false);
+    this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, [], 0, usedFallback);
     
     return textContent;
   }

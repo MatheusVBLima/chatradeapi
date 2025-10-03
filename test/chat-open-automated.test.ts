@@ -162,7 +162,7 @@ async function runTest(testCase: TestCase): Promise<TestResult> {
     const response = await axios.post(API_URL, {
       message: testCase.message,
       userId: testCase.userId,
-      channel: 'web'
+      environment: 'web'
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 15000

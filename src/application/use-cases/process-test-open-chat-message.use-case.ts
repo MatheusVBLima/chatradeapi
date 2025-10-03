@@ -1,116 +1,57 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { UserRepository } from '../../domain/repositories/user.repository';
-import { AIService } from '../../domain/services/ai.service';
-import { User } from '../../domain/entities/user.entity';
-import { getVirtualAssistanceTools } from './ai-tools';
-import { CoreTool } from 'ai';
+import { Injectable } from '@nestjs/common';
+import { OpenChatFlow, OpenChatState } from '../../domain/flows/open-chat.flow';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 export interface ProcessTestOpenChatMessageRequest {
   message: string;
-  userId?: string;
   phone?: string;
-  email?: string;
-  channel: string;
+  environment: ChatEnvironment;
+  state?: OpenChatState;
 }
 
 export interface ProcessTestOpenChatMessageResponse {
   response: string;
   success: boolean;
   error?: string;
+  nextState?: OpenChatState;
 }
 
 @Injectable()
 export class ProcessTestOpenChatMessageUseCase {
+  constructor(private readonly openChatFlow: OpenChatFlow) {}
 
-  constructor(
-    @Inject('UserRepository') private readonly userRepository: UserRepository,
-    @Inject('AIService') private readonly aiService: AIService,
-    private readonly configService: ConfigService,
-  ) {}
-
-  async execute(request: ProcessTestOpenChatMessageRequest): Promise<ProcessTestOpenChatMessageResponse> {
+  async execute(
+    request: ProcessTestOpenChatMessageRequest,
+  ): Promise<ProcessTestOpenChatMessageResponse> {
     try {
-      console.log('[TEST-USE-CASE] Processing test open chat message:', request.userId, request.message);
+      console.log(
+        '[TEST-OPEN-USE-CASE] Processing message:',
+        request.message,
+      );
 
-      let actor: User | null = null;
-      if (request.userId) {
-        // First, try to find the user by ID. If not found, try finding by CPF.
-        // This makes the endpoint flexible for testing and future auth methods.
-        actor = await this.userRepository.findById(request.userId);
-        if (!actor) {
-          actor = await this.userRepository.findByCpf(request.userId);
-        }
-      } else if (request.phone) {
-        actor = await this.userRepository.findByPhone(request.phone);
-      } else if (request.email) {
-        actor = await this.userRepository.findByEmail(request.email);
-      }
+      const { response, nextState } = await this.openChatFlow.handle(
+        request.message,
+        request.state ?? null,
+        request.phone,
+        true, // isTestMode = true para test_open
+      );
 
-      if (!actor) {
-        return {
-          response: '[TESTE] Desculpe, não consegui te identificar. Verifique se suas informações de acesso estão corretas.',
-          success: false,
-          error: 'Actor not found'
-        };
-      }
-
-      // 2. Select tools based on the actor's role
-      const availableTools = this.getToolsForRole(actor.role);
-
-      // 3. Let the AI service handle the tool-calling logic
-      console.log('[TEST-USE-CASE] About to call processToolCall with tools:', Object.keys(availableTools));
-      const aiResponse = await this.aiService.processToolCall(actor, request.message, availableTools);
-
-      // Add test prefix to AI response
-      const testResponse = `[TESTE] ${aiResponse}`;
+      // Add test prefix to response
+      const testResponse = `[TESTE] ${response}`;
 
       return {
         response: testResponse,
-        success: true
+        success: true,
+        nextState,
       };
-
     } catch (error) {
-      console.error('Error processing test chat message:', error);
+      console.error('[TEST-OPEN-USE-CASE] Error processing message:', error);
       return {
-        response: '[TESTE] Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
+        response:
+          '[TESTE] Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
-  }
-
-  private getToolsForRole(role: 'student' | 'coordinator'): Record<string, CoreTool> {
-    const tools = getVirtualAssistanceTools(this.configService);
-
-    const studentTools = {
-      getStudentsScheduledActivities: tools.getStudentsScheduledActivities,
-      getStudentsProfessionals: tools.getStudentsProfessionals,
-      getStudentInfo: tools.getStudentInfo,
-    };
-
-    const coordinatorTools = {
-      getCoordinatorsOngoingActivities: tools.getCoordinatorsOngoingActivities,
-      getCoordinatorsProfessionals: tools.getCoordinatorsProfessionals,
-      getCoordinatorsStudents: tools.getCoordinatorsStudents,
-      getCoordinatorInfo: tools.getCoordinatorInfo,
-    };
-
-    // Common tools available for everyone
-    const commonTools = {
-      findPersonByName: tools.findPersonByName,
-    };
-
-    // Add generateReport only if enabled
-    if ((tools as any).generateReport) {
-      (commonTools as any).generateReport = (tools as any).generateReport;
-    }
-
-    if (role === 'coordinator') {
-      // Coordinators can also use student tools to look up specific students
-      return { ...commonTools, ...studentTools, ...coordinatorTools };
-    }
-
-    return { ...commonTools, ...studentTools };
   }
 }

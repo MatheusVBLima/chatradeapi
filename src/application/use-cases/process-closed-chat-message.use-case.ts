@@ -2,14 +2,15 @@ import { Injectable, Inject } from '@nestjs/common';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { ClosedChatFlow, ClosedChatState } from '../../domain/flows/closed-chat.flow';
 import { User } from '../../domain/entities/user.entity';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 export interface ProcessClosedChatMessageRequest {
   message: string;
   userId?: string;
   phone?: string;
   email?: string;
-  channel: string;
-  state?: ClosedChatState; 
+  environment: ChatEnvironment;
+  state?: ClosedChatState;
 }
 
 export interface ProcessClosedChatMessageResponse {

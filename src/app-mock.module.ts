@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { validate } from './config/env.validation';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { MockChatController } from './infrastructure/controllers/mock-chat.controller';
 import { ReportController } from './infrastructure/controllers/report.controller';
 import { ProcessOpenChatMessageUseCase } from './application/use-cases/process-open-chat-message.use-case';
 import { ProcessClosedChatMessageUseCase } from './application/use-cases/process-closed-chat-message.use-case';
@@ -16,6 +18,9 @@ import { MockVirtualAssistanceService } from './infrastructure/services/mock-vir
 import { CacheService } from './application/services/cache.service';
 import { MetricsService } from './application/services/metrics.service';
 import { MetricsController } from './infrastructure/controllers/metrics.controller';
+import { NotificationService } from './application/services/notification.service';
+import { ResumoConversaService } from './application/services/resumo-conversa.service';
+import { ZapiModule } from './infrastructure/modules/zapi.module';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -26,9 +31,15 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate,
     }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000, // Time window in milliseconds (1 minute)
+      limit: 30, // Maximum number of requests per ttl window
+    }]),
+    ZapiModule,
   ],
-  controllers: [AppController, MockChatController, ReportController, MetricsController],
+  controllers: [AppController, ReportController, MetricsController],
   providers: [
     AppService,
     ProcessOpenChatMessageUseCase,
@@ -41,6 +52,13 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     PromptService,
     MockVirtualAssistanceService,
     MockUserRepository,
+    GeminiAIService, // Adicionado para ClosedChatFlow
+    NotificationService, // Adicionado para ClosedChatFlow
+    ResumoConversaService, // Adicionado para ClosedChatFlow
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: USER_REPOSITORY,
       useClass: MockUserRepository,

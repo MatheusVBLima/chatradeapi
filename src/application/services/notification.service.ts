@@ -60,15 +60,9 @@ export class NotificationService {
    * Obtém configuração de atendentes baseada no ambiente
    */
   private getAtendentesConfig(): Record<string, AtendenteConfig> {
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    if (isProduction) {
-      // Configuração REAL para produção
-      return this.getAtendentesProducao();
-    } else {
-      // Configuração de TESTE para development/staging
-      return this.getAtendentesTeste();
-    }
+    // SEMPRE usar atendentes reais do .env
+    // Validação de universidade sem atendente será feita no flow
+    return this.getAtendentesProducao();
   }
 
   /**
@@ -78,85 +72,79 @@ export class NotificationService {
     const config: Record<string, AtendenteConfig> = {};
 
     // Isabel Suporte Rade
-    const isabelNome =
-      process.env.ATENDENTE_ISABEL_NOME || 'Isabel Suporte Rade';
-    const isabelTelefone =
-      process.env.ATENDENTE_ISABEL_TELEFONE || '5581982977693';
-    const isabelUnivs =
-      process.env.ATENDENTE_ISABEL_UNIVERSIDADES ||
-      'Zarns Salvador,Inapós,Imepac,Zarns Itumbiara,Zarns Unesul,FAP - Faculdade Paraíso,Cet,Franco Montoro';
-    const isabelUniversidades = isabelUnivs.split(',').map((u) => u.trim());
+    const isabelNome = process.env.ATENDENTE_ISABEL_NOME;
+    const isabelTelefone = process.env.ATENDENTE_ISABEL_TELEFONE;
+    const isabelUnivs = process.env.ATENDENTE_ISABEL_UNIVERSIDADES;
 
-    isabelUniversidades.forEach((univ) => {
-      config[univ] = {
-        nome: isabelNome,
-        telefone: isabelTelefone,
-        universidades: isabelUniversidades,
-        maxChamados: 8, // Isabel pode atender até 8 chamados simultâneos
-        chamadosAtivos: 0,
-      };
-    });
-
-    // Kalina assistente Rade
-    const kalinaNome =
-      process.env.ATENDENTE_KALINA_NOME || 'Kalina assistente Rade';
-    const kalinaTelefone =
-      process.env.ATENDENTE_KALINA_TELEFONE || '5581998764907';
-    const kalinaUnivs =
-      process.env.ATENDENTE_KALINA_UNIVERSIDADES ||
-      'Unisa,UNICEPLAC,Faculdade Cathedral';
-    const kalinaUniversidades = kalinaUnivs.split(',').map((u) => u.trim());
-
-    kalinaUniversidades.forEach((univ) => {
-      config[univ] = {
-        nome: kalinaNome,
-        telefone: kalinaTelefone,
-        universidades: kalinaUniversidades,
-        maxChamados: 6, // Kalina pode atender até 6 chamados simultâneos
-        chamadosAtivos: 0,
-      };
-    });
-
-    // Pamela
-    const pamelaNome = process.env.ATENDENTE_PAMELA_NOME || 'Pamela';
-    const pamelaTelefone =
-      process.env.ATENDENTE_PAMELA_TELEFONE || '5581988609270';
-    const pamelaUnivs =
-      process.env.ATENDENTE_PAMELA_UNIVERSIDADES ||
-      'IDOMED,FTC/ UNEX,ASCES,INSPIRALI,CEUMA,MANDIC,SÍRIO LIBANÊS (RESIDÊNCIA)';
-    const pamelaUniversidades = pamelaUnivs.split(',').map((u) => u.trim());
-
-    pamelaUniversidades.forEach((univ) => {
-      config[univ] = {
-        nome: pamelaNome,
-        telefone: pamelaTelefone,
-        universidades: pamelaUniversidades,
-        maxChamados: 8, // Pamela pode atender até 8 chamados simultâneos
-        chamadosAtivos: 0,
-      };
-    });
-
-    // Vitória
-    const vitoriaNome = process.env.ATENDENTE_VITORIA_NOME || 'Vitória';
-    const vitoriaTelefone =
-      process.env.ATENDENTE_VITORIA_TELEFONE || '5581997139679';
-    const vitoriaUnivs =
-      process.env.ATENDENTE_VITORIA_UNIVERSIDADES ||
-      'INSPIRALI,CEUMA,MANDIC,SÍRIO LIBANÊS (RESIDÊNCIA)';
-    const vitoriaUniversidades = vitoriaUnivs.split(',').map((u) => u.trim());
-
-    vitoriaUniversidades.forEach((univ) => {
-      // Se já existe (Pamela), mantém Pamela como principal
-      if (!config[univ]) {
+    if (isabelNome && isabelTelefone && isabelUnivs) {
+      const isabelUniversidades = isabelUnivs.split(',').map((u) => u.trim());
+      isabelUniversidades.forEach((univ) => {
         config[univ] = {
-          nome: vitoriaNome,
-          telefone: vitoriaTelefone,
-          universidades: vitoriaUniversidades,
-          maxChamados: 6, // Vitória pode atender até 6 chamados simultâneos
+          nome: isabelNome,
+          telefone: isabelTelefone,
+          universidades: isabelUniversidades,
+          maxChamados: 8,
           chamadosAtivos: 0,
         };
-      }
-    });
+      });
+    }
+
+    // Kalina assistente Rade
+    const kalinaNome = process.env.ATENDENTE_KALINA_NOME;
+    const kalinaTelefone = process.env.ATENDENTE_KALINA_TELEFONE;
+    const kalinaUnivs = process.env.ATENDENTE_KALINA_UNIVERSIDADES;
+
+    if (kalinaNome && kalinaTelefone && kalinaUnivs) {
+      const kalinaUniversidades = kalinaUnivs.split(',').map((u) => u.trim());
+      kalinaUniversidades.forEach((univ) => {
+        config[univ] = {
+          nome: kalinaNome,
+          telefone: kalinaTelefone,
+          universidades: kalinaUniversidades,
+          maxChamados: 6,
+          chamadosAtivos: 0,
+        };
+      });
+    }
+
+    // Pamela
+    const pamelaNome = process.env.ATENDENTE_PAMELA_NOME;
+    const pamelaTelefone = process.env.ATENDENTE_PAMELA_TELEFONE;
+    const pamelaUnivs = process.env.ATENDENTE_PAMELA_UNIVERSIDADES;
+
+    if (pamelaNome && pamelaTelefone && pamelaUnivs) {
+      const pamelaUniversidades = pamelaUnivs.split(',').map((u) => u.trim());
+      pamelaUniversidades.forEach((univ) => {
+        config[univ] = {
+          nome: pamelaNome,
+          telefone: pamelaTelefone,
+          universidades: pamelaUniversidades,
+          maxChamados: 8,
+          chamadosAtivos: 0,
+        };
+      });
+    }
+
+    // Vitória
+    const vitoriaNome = process.env.ATENDENTE_VITORIA_NOME;
+    const vitoriaTelefone = process.env.ATENDENTE_VITORIA_TELEFONE;
+    const vitoriaUnivs = process.env.ATENDENTE_VITORIA_UNIVERSIDADES;
+
+    if (vitoriaNome && vitoriaTelefone && vitoriaUnivs) {
+      const vitoriaUniversidades = vitoriaUnivs.split(',').map((u) => u.trim());
+      vitoriaUniversidades.forEach((univ) => {
+        // Se já existe (Pamela), mantém Pamela como principal
+        if (!config[univ]) {
+          config[univ] = {
+            nome: vitoriaNome,
+            telefone: vitoriaTelefone,
+            universidades: vitoriaUniversidades,
+            maxChamados: 6,
+            chamadosAtivos: 0,
+          };
+        }
+      });
+    }
 
     return config;
   }

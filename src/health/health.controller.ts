@@ -1,8 +1,20 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 
+@ApiTags('health')
 @Controller('health')
+@SkipThrottle() // Health checks should never be rate limited
 export class HealthController {
   @Get()
+  @ApiOperation({
+    summary: 'Health check principal',
+    description: 'Verifica o status da API. Retorna informações básicas sobre saúde, memória e configuração. Sem rate limit.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'API funcionando normalmente',
+  })
   check() {
     return {
       status: 'ok',
@@ -23,6 +35,14 @@ export class HealthController {
   }
 
   @Get('detailed')
+  @ApiOperation({
+    summary: 'Health check detalhado',
+    description: 'Retorna informações completas sobre o sistema incluindo CPU, memória detalhada, plataforma e versão do Node.js. Sem rate limit.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informações detalhadas do sistema',
+  })
   detailedCheck() {
     return {
       status: 'ok',

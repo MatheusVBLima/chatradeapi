@@ -14,11 +14,9 @@
 # Environment & Configuration
 # --------------------------------
 # Sensitive environment files
-.env
-.env.local
-.env.development
-.env.staging
-.env.production
+.env*
+!.env.example
+
 env*
 
 # Keep template file
@@ -45,11 +43,7 @@ pids
 # Test Files & Temporary Code
 # --------------------------------
 # Test scripts (not the test/ folder)
-test-hybrid-staging.ts
-test-api-chat.ts
-test-closed-chat.ts
-test-hybrid-staging.ts
-test-open-chat.ts
+
 scripts/*
 
 # Temporary development files
@@ -73,19 +67,20 @@ melhorias.md
 notas.md
 rascunho.md
 deploy.md
-test.md
-TESTE-*.md
 ZAPI-SETUP.md
 README-DOCKER.md
+
+# Implementation planning docs folder (not for version control)
+!docs/
+
+# CLI test scripts folder (not for version control)
+!cli-tests/
 
 # Keep important docs
 !README.md
 
 # Claude Code project file (personal)
 CLAUDE.md
-
-# Files generated during development
-Retornos-*.md
 
 # --------------------------------
 # IDE & Editor Files

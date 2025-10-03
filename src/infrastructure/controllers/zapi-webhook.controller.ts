@@ -7,7 +7,10 @@ import {
   HttpStatus,
   Req,
   Res,
+  Logger,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ZapiService } from '../services/zapi.service';
 import axios from 'axios';
@@ -27,8 +30,12 @@ interface UserSession {
   lastActivity: Date;
 }
 
+@ApiTags('webhook')
 @Controller('webhook')
+@SkipThrottle() // Webhooks should never be rate limited
 export class ZapiWebhookController {
+  private readonly logger = new Logger(ZapiWebhookController.name);
+
   // In-memory session storage (for production, use Redis or database)
   private sessions: Map<string, UserSession> = new Map();
   private readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
@@ -40,6 +47,53 @@ export class ZapiWebhookController {
 
   @Post('zapi')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Webhook do Z-API para mensagens WhatsApp',
+    description: `Recebe webhooks do Z-API quando usuários enviam mensagens via WhatsApp.
+
+O fluxo é:
+1. Z-API envia webhook com dados da mensagem
+2. Sistema valida assinatura (em produção)
+3. Extrai dados da mensagem
+4. Busca ou cria sessão do usuário
+5. Processa mensagem através do endpoint /chat/test_hybrid
+6. Envia resposta de volta para o usuário via WhatsApp
+
+Este endpoint gerencia sessões em memória para manter contexto entre mensagens (timeout: 30min).`,
+  })
+  @ApiHeader({
+    name: 'x-zapi-signature',
+    description: 'Assinatura do webhook para validação',
+    required: false,
+  })
+  @ApiBody({
+    description: 'Payload do webhook Z-API',
+    schema: {
+      type: 'object',
+      properties: {
+        phone: { type: 'string', example: '5511999999999' },
+        text: { type: 'string', example: 'Olá' },
+        message: { type: 'string', example: 'Olá' },
+        body: { type: 'string', example: 'Olá' },
+        instanceId: { type: 'string', example: 'instance-123' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook processado com sucesso',
+    schema: { type: 'string', example: 'OK' },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Assinatura inválida (apenas em produção)',
+    schema: { type: 'string', example: 'Forbidden' },
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Erro ao processar webhook',
+    schema: { type: 'string', example: 'Internal Server Error' },
+  })
   async handleZapiWebhook(
     @Body() body: any,
     @Headers('x-zapi-signature') signature: string,
@@ -47,16 +101,12 @@ export class ZapiWebhookController {
     @Res() res: Response,
   ): Promise<void> {
     try {
-      console.log('[ZAPI-WEBHOOK] Received webhook:', {
-        phone: body.phone,
-        text: body.text || body.message || body.body,
-        fullBody: body,
-      });
+      this.logger.log(`Received webhook: phone=${body.phone}, text=${body.text || body.message || body.body}`);
 
       // Validate webhook (if Z-API provides signature validation)
       const isValid = this.validateWebhook(signature, req, body);
       if (!isValid && process.env.NODE_ENV === 'production') {
-        console.warn('[ZAPI-WEBHOOK] Invalid webhook signature');
+        this.logger.warn('Invalid webhook signature');
         res.status(403).send('Forbidden');
         return;
       }
@@ -66,7 +116,7 @@ export class ZapiWebhookController {
       const userMessage = messageData.body;
 
       if (!userMessage.trim()) {
-        console.log('[ZAPI-WEBHOOK] Empty message received, ignoring');
+        this.logger.log('Empty message received, ignoring');
         res.status(200).send('OK');
         return;
       }
@@ -87,26 +137,23 @@ export class ZapiWebhookController {
       // Send response back via WhatsApp
       if (chatResponse.response) {
         try {
-          console.log('[ZAPI-WEBHOOK] About to send message to:', userPhone);
+          this.logger.log(`About to send message to: ${userPhone}`);
 
           await this.zapiService.sendWhatsAppMessage(
             userPhone,
             chatResponse.response,
           );
 
-          console.log(
-            '[ZAPI-WEBHOOK] Message sent successfully to:',
-            userPhone,
-          );
+          this.logger.log(`Message sent successfully to: ${userPhone}`);
         } catch (error) {
-          console.error('[ZAPI-WEBHOOK] Error sending message:', error);
+          this.logger.error('Error sending message:', error);
         }
       }
 
-      console.log('[ZAPI-WEBHOOK] Message processed successfully');
+      this.logger.log('Message processed successfully');
       res.status(200).send('OK');
     } catch (error) {
-      console.error('[ZAPI-WEBHOOK] Error processing webhook:', error);
+      this.logger.error('Error processing webhook:', error);
 
       // Send error message to user
       try {
@@ -115,7 +162,7 @@ export class ZapiWebhookController {
           'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
         );
       } catch (sendError) {
-        console.error('[ZAPI-WEBHOOK] Error sending error message:', sendError);
+        this.logger.error('Error sending error message:', sendError);
       }
 
       res.status(500).send('Internal Server Error');
@@ -124,7 +171,7 @@ export class ZapiWebhookController {
 
   private validateWebhook(signature: string, req: Request, body: any): boolean {
     if (!signature) {
-      console.warn('[ZAPI-WEBHOOK] No signature provided');
+      this.logger.warn('No signature provided');
       return true; // Z-API may not use signature validation
     }
 
@@ -132,7 +179,7 @@ export class ZapiWebhookController {
       const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
       return this.zapiService.validateWebhook(signature, url, body);
     } catch (error) {
-      console.error('[ZAPI-WEBHOOK] Signature validation error:', error);
+      this.logger.error('Signature validation error:', error);
       return false;
     }
   }
@@ -152,7 +199,7 @@ export class ZapiWebhookController {
     };
 
     this.sessions.set(phoneNumber, newSession);
-    console.log(`[ZAPI-WEBHOOK] Created new session for ${phoneNumber}`);
+    this.logger.log(`Created new session for ${phoneNumber}`);
 
     return newSession;
   }
@@ -175,7 +222,7 @@ export class ZapiWebhookController {
     }
 
     if (cleanedCount > 0) {
-      console.log(`[ZAPI-WEBHOOK] Cleaned ${cleanedCount} expired sessions`);
+      this.logger.log(`Cleaned ${cleanedCount} expired sessions`);
     }
   }
 
@@ -183,10 +230,7 @@ export class ZapiWebhookController {
     message: string,
     state: any,
   ): Promise<any> {
-    console.log('[ZAPI-WEBHOOK] Calling real test_hybrid endpoint:', {
-      message,
-      state: state?.currentState || 'START',
-    });
+    this.logger.log(`Calling test_hybrid endpoint: message="${message}", state=${state?.currentState || 'START'}`);
 
     try {
       // Call internal test_hybrid endpoint
@@ -194,18 +238,14 @@ export class ZapiWebhookController {
       const response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
         message: message,
         state: state,
-        channel: 'whatsapp',
+        environment: 'mobile',
       });
 
-      console.log('[ZAPI-WEBHOOK] test_hybrid response:', {
-        success: response.data.success,
-        hasResponse: !!response.data.response,
-        nextState: response.data.nextState?.currentState,
-      });
+      this.logger.log(`test_hybrid response: success=${response.data.success}, nextState=${response.data.nextState?.currentState}`);
 
       return response.data;
     } catch (error) {
-      console.error('[ZAPI-WEBHOOK] Error calling test_hybrid:', error.response?.data || error.message);
+      this.logger.error('Error calling test_hybrid:', error.response?.data || error.message);
 
       // Fallback response em caso de erro
       return {
@@ -216,9 +256,24 @@ export class ZapiWebhookController {
     }
   }
 
-  // Health check endpoint
   @Post('zapi-health')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Health check do webhook Z-API',
+    description: 'Verifica se o sistema de webhooks está funcionando e retorna número de sessões ativas.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Status do webhook',
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', example: 'OK' },
+        timestamp: { type: 'string', example: '2025-10-02T19:00:00.000Z' },
+        sessions: { type: 'number', example: 5 },
+      },
+    },
+  })
   async health(): Promise<{
     status: string;
     timestamp: string;
