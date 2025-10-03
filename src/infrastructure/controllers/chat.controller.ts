@@ -1,51 +1,24 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Delete, Param } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ProcessOpenChatMessageUseCase,
-  ProcessOpenChatMessageRequest
 } from '../../application/use-cases/process-open-chat-message.use-case';
 import {
   ProcessClosedChatMessageUseCase,
-  ProcessClosedChatMessageRequest
 } from '../../application/use-cases/process-closed-chat-message.use-case';
 import { ProcessApiChatMessageUseCase } from '../../application/use-cases/process-api-chat-message.use-case';
-import { ClosedChatState } from '../../domain/flows/closed-chat.flow';
-import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
+import {
+  OpenChatRequestDto,
+  ClosedChatRequestDto,
+  ChatResponseDto,
+} from '../dto';
 
-// DTO for open chat
-export class OpenChatRequestDto implements ProcessOpenChatMessageRequest {
-  message: string;
-  userId?: string;
-  phone?: string;
-  email?: string;
-  environment: ChatEnvironment;
-}
-
-// DTO for closed chat
-export class ClosedChatRequestDto implements ProcessClosedChatMessageRequest {
-  message: string;
-  userId?: string;
-  phone?: string;
-  email?: string;
-  state?: ClosedChatState;
-  environment: ChatEnvironment;
-}
-
-// DTO for API chat
-export class ApiChatRequestDto {
-  message: string;
-  userId: string;
-  environment: ChatEnvironment;
-}
-
-export class ChatResponseDto {
-  response: string;
-  success: boolean;
-  error?: string;
-  nextState?: ClosedChatState | null;
-}
-
+@ApiTags('chat')
 @Controller('chat')
 export class ChatController {
+  private readonly logger = new Logger(ChatController.name);
+
   constructor(
     private readonly processOpenChatMessageUseCase: ProcessOpenChatMessageUseCase,
     private readonly processClosedChatMessageUseCase: ProcessClosedChatMessageUseCase,
@@ -54,10 +27,28 @@ export class ChatController {
 
   @Post('open')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chat aberto com IA',
+    description: 'Conversa livre com IA usando Google Gemini. Suporta function calling para buscar dados do usuário, atividades, professores, etc.',
+  })
+  @ApiBody({ type: OpenChatRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Resposta do chatbot',
+    type: ChatResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Requisição inválida',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit excedido (30 requisições por minuto)',
+  })
   async processOpenMessage(@Body() request: OpenChatRequestDto): Promise<ChatResponseDto> {
-    console.log('[CONTROLLER] /chat/open called with:', request.userId, request.message);
+    this.logger.log(`/chat/open called - userId: ${request.userId}, message: ${request.message}`);
     const result = await this.processOpenChatMessageUseCase.execute(request);
-    
+
     return {
       response: result.response,
       success: result.success,
@@ -67,9 +58,28 @@ export class ChatController {
 
   @Post('closed')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chat guiado por fluxo',
+    description: 'Conversa estruturada com menu de opções. Não usa IA, segue fluxo pré-definido.',
+  })
+  @ApiBody({ type: ClosedChatRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Resposta do chatbot com próximo estado',
+    type: ChatResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Requisição inválida',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit excedido (30 requisições por minuto)',
+  })
   async processClosedMessage(@Body() request: ClosedChatRequestDto): Promise<ChatResponseDto> {
+    this.logger.log(`/chat/closed called - message: ${request.message}`);
     const result = await this.processClosedChatMessageUseCase.execute(request);
-    
+
     return {
       response: result.response,
       success: result.success,
@@ -80,13 +90,13 @@ export class ChatController {
 
   @Post('api')
   @HttpCode(HttpStatus.OK)
-  async processApiMessage(@Body() request: ApiChatRequestDto): Promise<ChatResponseDto> {
-    console.log(`[CONTROLLER] Recebida requisição API - CPF: ${request.userId}, Mensagem: ${request.message}`);
-    
-    const result = await this.processApiChatMessageUseCase.execute(request.message, request.userId);
-    
-    console.log(`[CONTROLLER] Resultado: success=${result.success}, response length=${result.response.length}`);
-    
+  async processApiMessage(@Body() request: OpenChatRequestDto): Promise<ChatResponseDto> {
+    this.logger.log(`/chat/api called - userId: ${request.userId}, message: ${request.message}`);
+
+    const result = await this.processApiChatMessageUseCase.execute(request.message, request.userId || '');
+
+    this.logger.log(`Result: success=${result.success}, response length=${result.response.length}`);
+
     return {
       response: result.response,
       success: result.success,
@@ -94,7 +104,22 @@ export class ChatController {
   }
 
   @Post('health')
+  @SkipThrottle() // Health checks should never be rate limited
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Health check do chat',
+    description: 'Verifica se os endpoints de chat estão funcionando. Sem rate limit.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Serviço funcionando',
+    schema: {
+      properties: {
+        status: { type: 'string', example: 'OK' },
+        timestamp: { type: 'string', example: '2025-10-02T10:00:00.000Z' },
+      },
+    },
+  })
   async health(): Promise<{ status: string; timestamp: string }> {
     return {
       status: 'OK',

@@ -52,7 +52,19 @@
       "Bash(wmic process where processid=18780 delete:*)",
       "Bash(wmic process where processid=11732 delete:*)",
       "Bash(npm install:*)",
-      "Bash(wmic process where processid=14468 delete:*)"
+      "Bash(wmic process where processid=14468 delete:*)",
+      "Bash(npx nest build:*)",
+      "Bash(git log:*)",
+      "Bash(NODE_ENV=staging GOOGLE_GENERATIVE_AI_API_KEY=\"\" npm run start:dev)",
+      "Bash(npm run test:e2e:*)",
+      "Bash(timeout:*)",
+      "Bash(tee:*)",
+      "Bash(git mv:*)",
+      "Bash(move PLANO-IMPLEMENTACAO.md docs )",
+      "Bash(move PLANO-MELHORIAS-RESTANTES.md docs )",
+      "Bash(move MELHORIAS-IMPLEMENTADAS.md docs )",
+      "Bash(move RATE-LIMITING-AJUSTADO.md docs )",
+      "Bash(move:*)"
     ],
     "deny": []
   }

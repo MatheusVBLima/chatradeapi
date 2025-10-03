@@ -1,4 +1,5 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { ProcessOpenChatMessageUseCase } from '../../application/use-cases/process-open-chat-message.use-case';
 import {
   ClosedChatState,
@@ -43,23 +44,12 @@ interface HybridChatState {
   };
 }
 
-// DTOs
-export class HybridChatRequestDto {
-  message: string;
-  phone?: string;
-  state?: HybridChatState | null;
-  environment: ChatEnvironment; // 'web' ou 'mobile'
-}
+import { HybridChatRequestDto, HybridChatResponseDto } from '../dto';
 
-export class HybridChatResponseDto {
-  response: string;
-  success: boolean;
-  error?: string;
-  nextState?: HybridChatState | null;
-}
-
+@ApiTags('chat')
 @Controller('chat')
 export class HybridChatController {
+  private readonly logger = new Logger(HybridChatController.name);
   private readonly RADE_API_URL =
     process.env.RADE_API_BASE_URL || 'https://api.stg.radeapp.com';
   private readonly AI_CHAT_URL =
@@ -77,6 +67,37 @@ export class HybridChatController {
 
   @Post('hybrid')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chat híbrido com menu + IA',
+    description: `Fluxo de chat híbrido que combina menu estruturado com IA.
+
+O usuário é guiado por um menu interativo para:
+- Identificar se é estudante, coordenador ou novo usuário
+- Validar CPF e mostrar opções específicas para cada perfil
+- Assistir vídeos tutoriais sobre funcionalidades
+- Opcionalmente conversar com IA após autenticação
+- Solicitar transferência para atendimento humano
+
+O estado da conversa é mantido através do campo 'state' que deve ser retornado pelo backend e reenviado em cada mensagem subsequente.`,
+  })
+  @ApiBody({ type: HybridChatRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Resposta do chatbot híbrido',
+    type: HybridChatResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Dados de entrada inválidos',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit excedido (30 requisições por minuto)',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Erro interno do servidor',
+  })
   async processHybridMessage(
     @Body() request: HybridChatRequestDto,
   ): Promise<HybridChatResponseDto> {
@@ -89,7 +110,7 @@ export class HybridChatController {
         nextState: result.nextState,
       };
     } catch (error) {
-      console.error('Error in hybrid chat:', error);
+      this.logger.error('Error in hybrid chat:', error);
       return {
         response: 'Erro interno. Tente novamente mais tarde.',
         success: false,
@@ -460,7 +481,7 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
         },
       };
     } catch (error) {
-      console.error('[HYBRID] Erro ao processar dados de novo usuário:', error);
+      this.logger.error(' Erro ao processar dados de novo usuário:', error);
       return {
         response:
           'Erro ao processar seus dados. Por favor, tente novamente mais tarde.',
@@ -706,8 +727,8 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     stateData: any,
   ): Promise<{ response: string; nextState: HybridChatState }> {
     try {
-      console.log(
-        `[HYBRID] Processando transferência para telefone: ${telefone}`,
+      this.logger.log(
+        `Processando transferência para telefone: ${telefone}`,
       );
 
       // 1. Buscar dados do usuário via API RADE
@@ -770,8 +791,8 @@ ${atendenteDisponivel.nome} irá entrar em contato com você pelo número ${aten
 
 O atendimento será encerrado agora. Aguarde o contato!`;
 
-      console.log(
-        `[HYBRID] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
+      this.logger.log(
+        `Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
       );
 
       return {
@@ -779,7 +800,7 @@ O atendimento será encerrado agora. Aguarde o contato!`;
         nextState: { currentState: HybridChatFlowState.END, data: {} },
       };
     } catch (error) {
-      console.error('[HYBRID] Erro na transferência:', error);
+      this.logger.error(' Erro na transferência:', error);
       return {
         response: 'Erro interno na transferência. Tente novamente mais tarde.',
         nextState: { currentState: HybridChatFlowState.END, data: {} },
@@ -796,13 +817,13 @@ O atendimento será encerrado agora. Aguarde o contato!`;
       try {
         const dadosEstudante =
           await this.apiVirtualAssistanceService.getStudentInfo(cpf);
-        console.log(
-          `[HYBRID] Dados de estudante encontrados: ${dadosEstudante.studentName}`,
+        this.logger.log(
+          `Dados de estudante encontrados: ${dadosEstudante.studentName}`,
         );
         return dadosEstudante;
       } catch (error) {
-        console.log(
-          `[HYBRID] CPF não é estudante, tentando como coordenador...`,
+        this.logger.log(
+          `CPF não é estudante, tentando como coordenador...`,
         );
       }
 
@@ -810,17 +831,17 @@ O atendimento será encerrado agora. Aguarde o contato!`;
       try {
         const dadosCoordenador =
           await this.apiVirtualAssistanceService.getCoordinatorInfo(cpf);
-        console.log(
-          `[HYBRID] Dados de coordenador encontrados: ${dadosCoordenador.coordinatorName}`,
+        this.logger.log(
+          `Dados de coordenador encontrados: ${dadosCoordenador.coordinatorName}`,
         );
         return dadosCoordenador;
       } catch (error) {
-        console.log(`[HYBRID] CPF não é coordenador`);
+        this.logger.log(`CPF não é coordenador`);
       }
 
       return null;
     } catch (error) {
-      console.error('[HYBRID] Erro ao buscar dados do usuário:', error);
+      this.logger.error(' Erro ao buscar dados do usuário:', error);
       return null;
     }
   }
@@ -914,7 +935,7 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
       const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
       return atendente ? instituicao : null;
     } catch (error) {
-      console.error('[HYBRID] Erro ao extrair instituição:', error);
+      this.logger.error(' Erro ao extrair instituição:', error);
       return null;
     }
   }
@@ -948,11 +969,11 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
         dadosCompletos: mensagem,
       } as any);
 
-      console.log(
-        `[HYBRID] Dados de novo usuário enviados para ${atendente.nome} - ${instituicao}`,
+      this.logger.log(
+        `Dados de novo usuário enviados para ${atendente.nome} - ${instituicao}`,
       );
     } catch (error) {
-      console.error('[HYBRID] Erro ao enviar dados de novo usuário:', error);
+      this.logger.error('Erro ao enviar dados de novo usuário:', error);
     }
   }
 }

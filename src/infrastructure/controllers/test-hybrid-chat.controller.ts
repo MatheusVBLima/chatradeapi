@@ -1,4 +1,5 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { ProcessTestOpenChatMessageUseCase } from '../../application/use-cases/process-test-open-chat-message.use-case';
 import {
   ClosedChatState,
@@ -43,22 +44,12 @@ interface TestHybridChatState {
   };
 }
 
-// DTOs
-export class TestHybridChatRequestDto {
-  message: string;
-  state?: TestHybridChatState | null;
-  environment: ChatEnvironment;
-}
+import { TestHybridChatRequestDto, HybridChatResponseDto } from '../dto';
 
-export class TestHybridChatResponseDto {
-  response: string;
-  success: boolean;
-  error?: string;
-  nextState?: TestHybridChatState | null;
-}
-
+@ApiTags('chat')
 @Controller('chat')
 export class TestHybridChatController {
+  private readonly logger = new Logger(TestHybridChatController.name);
   private readonly RADE_API_URL =
     process.env.RADE_API_BASE_URL || 'https://api.stg.radeapp.com';
   private readonly AI_CHAT_URL =
@@ -76,14 +67,31 @@ export class TestHybridChatController {
 
   @Post('test_hybrid')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Test: Chat híbrido com menu + IA (Mock Data)',
+    description: `Endpoint de teste para fluxo híbrido usando dados mockados.
+
+Diferenças do /chat/hybrid:
+- Usa dados mockados em vez da API RADE
+- Sempre solicita telefone para validação
+- Adiciona prefixo [TESTE] nas mensagens
+- Útil para testar o fluxo completo sem acesso à API real`,
+  })
+  @ApiBody({ type: TestHybridChatRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Resposta do chatbot híbrido de teste',
+    type: HybridChatResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit excedido (30 requisições por minuto)',
+  })
   async processTestHybridMessage(
     @Body() request: TestHybridChatRequestDto,
-  ): Promise<TestHybridChatResponseDto> {
+  ): Promise<HybridChatResponseDto> {
     try {
-      console.log(
-        '[TEST-HYBRID-CONTROLLER] /chat/test_hybrid called with:',
-        request.message,
-      );
+      this.logger.log(`/chat/test_hybrid called - message: ${request.message}`);
       const result = await this.handle(request.message, request.state || null);
 
       return {
@@ -92,7 +100,7 @@ export class TestHybridChatController {
         nextState: result.nextState,
       };
     } catch (error) {
-      console.error('Error in test hybrid chat:', error);
+      this.logger.error('Error in test hybrid chat:', error);
       return {
         response: 'Erro interno. Tente novamente mais tarde.',
         success: false,
