@@ -64,7 +64,12 @@
       "Bash(move PLANO-MELHORIAS-RESTANTES.md docs )",
       "Bash(move MELHORIAS-IMPLEMENTADAS.md docs )",
       "Bash(move RATE-LIMITING-AJUSTADO.md docs )",
-      "Bash(move:*)"
+      "Bash(move:*)",
+      "Bash(mkdir:*)",
+      "Bash(NODE_ENV=staging npx ts-node test/chat-open-automated.test.ts)",
+      "Bash(NODE_ENV=staging npm run start:dev)",
+      "Bash(NODE_ENV=staging npm run test:e2e)",
+      "Bash(dir:*)"
     ],
     "deny": []
   }

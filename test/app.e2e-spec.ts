@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 describe('Chatbot API E2E Tests', () => {
   let app: INestApplication;
@@ -21,6 +22,16 @@ describe('Chatbot API E2E Tests', () => {
         transform: true,
       }),
     );
+
+    // Configure Swagger Documentation (same as main.ts)
+    const config = new DocumentBuilder()
+      .setTitle('Chatbot RADE API')
+      .setDescription('API de chatbot para a plataforma RADE com integração WhatsApp (Z-API) e Google Gemini AI')
+      .setVersion('1.0')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
 
     await app.init();
   });

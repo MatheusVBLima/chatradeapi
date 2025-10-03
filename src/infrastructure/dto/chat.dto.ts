@@ -94,6 +94,10 @@ export class TestOpenChatRequestDto {
   @IsOptional()
   phone?: string;
 
+  @IsString()
+  @IsOptional()
+  cpf?: string;
+
   @IsOptional()
   state?: OpenChatState;
 }

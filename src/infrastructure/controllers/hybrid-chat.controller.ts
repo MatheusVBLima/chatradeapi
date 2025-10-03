@@ -543,7 +543,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       response: welcomeMessage,
       nextState: {
         currentState: HybridChatFlowState.AI_CHAT,
-        data: { ...state.data, userToken: authResult.token, userCpf: cpf },
+        data: { ...state.data, userToken: authResult.token, userCpf: cpf, userPhone: phone },
       },
     };
   }
@@ -574,6 +574,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       const result = await this.processOpenChatMessageUseCase.execute({
         message: message,
         userId: state.data.userCpf,
+        phone: state.data.userPhone, // Passa o telefone já autenticado
         environment: ChatEnvironment.WEB,
       });
 

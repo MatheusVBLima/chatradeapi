@@ -95,7 +95,7 @@ Funciona de forma similar ao /chat/closed, mas com dados simulados.`,
       properties: {
         status: { type: 'string', example: 'OK' },
         timestamp: { type: 'string', example: '2025-10-02T18:50:00.000Z' },
-        mode: { type: 'string', example: 'TEST' },
+        mode: { type: 'string', example: 'test' },
       },
     },
   })
@@ -103,7 +103,7 @@ Funciona de forma similar ao /chat/closed, mas com dados simulados.`,
     return {
       status: 'OK',
       timestamp: new Date().toISOString(),
-      mode: 'TEST'
+      mode: 'test'
     };
   }
 }

@@ -546,7 +546,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       response: welcomeMessage,
       nextState: {
         currentState: TestHybridChatFlowState.AI_CHAT,
-        data: { ...state.data, userToken: authResult.token, userCpf: cpf },
+        data: { ...state.data, userToken: authResult.token, userCpf: cpf, userPhone: phone },
       },
     };
   }
@@ -573,9 +573,20 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
     }
 
     try {
+      // Cria um state do OpenChat com o CPF já autenticado
+      const openChatState = {
+        currentState: 'AUTHENTICATED' as any,
+        data: {
+          cpf: state.data.userCpf,
+          userType: state.data.userType,
+        },
+      };
+
       const result = await this.processTestOpenChatMessageUseCase.execute({
         message: message,
         environment: ChatEnvironment.WEB,
+        phone: state.data.userPhone, // Passa o telefone já autenticado
+        state: openChatState, // Passa o state com CPF autenticado
       });
 
       if (!result.success && result.error === 'Actor not found') {

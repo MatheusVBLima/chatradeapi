@@ -16,8 +16,19 @@ async function bootstrap() {
 
   const app = await NestFactory.create(moduleToUse);
 
-  // Enable Helmet for security headers
-  app.use(helmet());
+  // Enable Helmet for security headers with exceptions for Swagger
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          scriptSrc: [`'self'`, `'unsafe-inline'`, `'unsafe-eval'`],
+          imgSrc: [`'self'`, 'data:', 'https:'],
+        },
+      },
+    }),
+  );
 
   // Enable global exception filter
   app.useGlobalFilters(new AllExceptionsFilter());

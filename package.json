@@ -9,7 +9,7 @@
     "build": "node --max-old-space-size=2048 node_modules/.bin/nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node --max-old-space-size=2048 node_modules/.bin/nest start",
-    "start:dev": "npx nest start --watch",
+    "start:dev": "cross-env NODE_ENV=staging npx nest start --watch",
     "start:dev:staging": "cross-env NODE_ENV=staging npx nest start --watch",
     "start:dev:prod": "cross-env NODE_ENV=production npx nest start --watch",
     "start:debug": "npx nest start --debug --watch",
@@ -18,7 +18,12 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:cli": "npx ts-node cli-tests/test-hybrid-staging.ts",
+    "test:cli:hybrid": "npx ts-node cli-tests/test-hybrid-staging.ts",
+    "test:cli:open": "npx ts-node cli-tests/test-open-staging.ts",
+    "test:cli:closed": "npx ts-node cli-tests/test-closed-staging.ts",
+    "test:cli:notification": "node cli-tests/test-notification.js"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
