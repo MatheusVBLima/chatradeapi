@@ -369,6 +369,24 @@ export class GeminiAIService implements AIService {
         }
       }
 
+      // 🚨 VERIFICAÇÃO DE SEGURANÇA: Bloquear respostas com código
+      if (
+        finalResponseText &&
+        (finalResponseText.includes('tool_codeprint') ||
+          finalResponseText.match(/generateReport\s*\(/i) ||
+          finalResponseText.match(/default_api\./i))
+      ) {
+        console.error(
+          '[AI] ⛔️ DETECTED CODE IN RESPONSE! Forcing re-generation without tools',
+        );
+        currentMessages.push({
+          role: 'user',
+          content:
+            '⛔️ VOCÊ RETORNOU CÓDIGO! Isso é PROIBIDO! Eu preciso que você EXECUTE a ferramenta generateReport, não que descreva ela. Tente novamente EXECUTANDO as ferramentas diretamente.',
+        });
+        finalResponseText = ''; // Forçar nova tentativa
+      }
+
       // Se não temos resposta final após o loop, fazer última tentativa
       if (!finalResponseText || finalResponseText.length < 10) {
         console.log('[AI] Making final call to get response');
