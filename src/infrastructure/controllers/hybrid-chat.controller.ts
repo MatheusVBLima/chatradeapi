@@ -1,4 +1,11 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { ProcessOpenChatMessageUseCase } from '../../application/use-cases/process-open-chat-message.use-case';
 import {
@@ -177,13 +184,14 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
         return await this.handleSimulationPhoneResponse(message, state!);
 
       default:
-        return this.handleStart();
+        return this.handleStart(environment);
     }
   }
 
-  private handleStart(
-    environment: ChatEnvironment,
-  ): { response: string; nextState: HybridChatState } {
+  private handleStart(environment: ChatEnvironment): {
+    response: string;
+    nextState: HybridChatState;
+  } {
     const response = `Olá! Bem-vindo ao atendimento RADE! Para começar, me diga qual seu perfil:
 
 1 - Sou Estudante
@@ -270,7 +278,12 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     }
 
     // Se MOBILE, Z-API detecta automaticamente o telefone
-    return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf, environment });
+    return this.showStudentMenu({
+      ...state.data,
+      studentCpf: cpf,
+      cpf: cpf,
+      environment,
+    });
   }
 
   private async handleCoordinatorCpfResponse(
@@ -352,7 +365,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
 
     if (choice === '8') {
       // Voltar ao menu inicial
-      return this.handleStart();
+      return this.handleStart(state.data.environment || ChatEnvironment.MOBILE);
     }
 
     if (choice === '9') {
@@ -443,7 +456,7 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
 
     if (choice === '6') {
       // Voltar ao menu inicial
-      return this.handleStart();
+      return this.handleStart(state.data.environment || ChatEnvironment.MOBILE);
     }
 
     if (choice === '7') {
@@ -502,7 +515,8 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
       }
 
       // Verificar se há atendente para esta instituição
-      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+      const atendente =
+        this.notificationService.getAtendentePorUniversidade(instituicao);
 
       if (!atendente) {
         return {
@@ -587,7 +601,12 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       response: welcomeMessage,
       nextState: {
         currentState: HybridChatFlowState.AI_CHAT,
-        data: { ...state.data, userToken: authResult.token, userCpf: cpf, userPhone: phone },
+        data: {
+          ...state.data,
+          userToken: authResult.token,
+          userCpf: cpf,
+          userPhone: phone,
+        },
       },
     };
   }
@@ -610,7 +629,7 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
       } else if (userType === 'coordinator') {
         return this.showCoordinatorMenu(state.data);
       }
-      return this.handleStart();
+      return this.handleStart(state.data.environment || ChatEnvironment.MOBILE);
     }
 
     try {
@@ -772,9 +791,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     stateData: any,
   ): Promise<{ response: string; nextState: HybridChatState }> {
     try {
-      this.logger.log(
-        `Processando transferência para telefone: ${telefone}`,
-      );
+      this.logger.log(`Processando transferência para telefone: ${telefone}`);
 
       // 1. Buscar dados do usuário via API RADE
       const dadosUsuario = await this.buscarDadosUsuarioCompletos(
@@ -801,7 +818,8 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
       }
 
       // 2.1. Verificar se há atendente para esta universidade
-      const atendenteDisponivel = this.notificationService.getAtendentePorUniversidade(universidade);
+      const atendenteDisponivel =
+        this.notificationService.getAtendentePorUniversidade(universidade);
 
       if (!atendenteDisponivel) {
         return {
@@ -867,9 +885,7 @@ O atendimento será encerrado agora. Aguarde o contato!`;
         );
         return dadosEstudante;
       } catch (error) {
-        this.logger.log(
-          `CPF não é estudante, tentando como coordenador...`,
-        );
+        this.logger.log(`CPF não é estudante, tentando como coordenador...`);
       }
 
       // Tenta como coordenador
@@ -969,7 +985,10 @@ Texto: "${mensagem}"
 
 Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole). Se não encontrar nenhuma instituição da lista, responda apenas "NENHUMA".`;
 
-      const response = await this.geminiAiService.generateResponse(prompt, {} as any);
+      const response = await this.geminiAiService.generateResponse(
+        prompt,
+        {} as any,
+      );
       const instituicao = response.trim();
 
       if (instituicao === 'NENHUMA' || !instituicao) {
@@ -977,7 +996,8 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
       }
 
       // Validar se a instituição extraída realmente existe no mapa de atendentes
-      const atendente = this.notificationService.getAtendentePorUniversidade(instituicao);
+      const atendente =
+        this.notificationService.getAtendentePorUniversidade(instituicao);
       return atendente ? instituicao : null;
     } catch (error) {
       this.logger.error(' Erro ao extrair instituição:', error);
@@ -1081,7 +1101,11 @@ Informe seu telefone novamente (com DDD):`,
 
     // Validar CPF + telefone na API RADE
     const cpf = state.data.coordinatorCpf || state.data.cpf;
-    const authResult = await this.authenticateUser(cpf, telefone, 'coordinator');
+    const authResult = await this.authenticateUser(
+      cpf,
+      telefone,
+      'coordinator',
+    );
 
     if (!authResult.token) {
       return {
