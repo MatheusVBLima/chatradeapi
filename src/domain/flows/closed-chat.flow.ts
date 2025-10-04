@@ -540,8 +540,8 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
         stateData.lastMenuOption,
       );
 
-      // 5. Adicionar à fila de atendimento
-      const chamado = await this.notificationService.adicionarChamadoFila({
+      // 5. Enviar notificação para atendente
+      const chamado = await this.notificationService.enviarNotificacaoChamado({
         telefoneUsuario: telefone,
         nomeUsuario:
           dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
@@ -559,7 +559,7 @@ ${atendenteDisponivel.nome} irá entrar em contato com você pelo número ${aten
 O atendimento será encerrado agora. Aguarde o contato!`;
 
       console.log(
-        `[CLOSED-CHAT] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
+        `[CLOSED-CHAT] Transferência concluída: ${chamado.id} - ${universidade}`,
       );
 
       return {

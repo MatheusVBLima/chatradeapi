@@ -774,8 +774,8 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
           contextoConversa,
         );
 
-      // 4. Adicionar à fila de atendimento
-      const chamado = await this.notificationService.adicionarChamadoFila({
+      // 4. Enviar notificação para atendente
+      const chamado = await this.notificationService.enviarNotificacaoChamado({
         telefoneUsuario: telefone,
         nomeUsuario:
           dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
@@ -793,7 +793,7 @@ ${atendenteDisponivel.nome} irá entrar em contato com você pelo número ${aten
 O atendimento será encerrado agora. Aguarde o contato!`;
 
       this.logger.log(
-        `Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
+        `Transferência concluída: ${chamado.id} - ${universidade}`,
       );
 
       return {

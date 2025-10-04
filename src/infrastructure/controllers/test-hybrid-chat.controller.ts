@@ -778,7 +778,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         stateData.lastMenuOption,
       );
 
-      const chamado = await this.notificationService.adicionarChamadoFila({
+      const chamado = await this.notificationService.enviarNotificacaoChamado({
         telefoneUsuario: telefone,
         nomeUsuario:
           dadosUsuario.studentName || dadosUsuario.coordinatorName || 'Usuário',
@@ -796,7 +796,7 @@ ${atendente.nome} irá entrar em contato com você pelo número ${atendente.tele
 O atendimento será encerrado agora. Aguarde o contato!`;
 
       console.log(
-        `[TEST-HYBRID] Transferência concluída: ${chamado.id} - ${universidade} - Posição ${chamado.posicaoAtual}`,
+        `[TEST-HYBRID] Transferência concluída: ${chamado.id} - ${universidade}`,
       );
 
       return {
