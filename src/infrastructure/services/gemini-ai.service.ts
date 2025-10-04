@@ -1,7 +1,13 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from '@ai-sdk/google';
-import { streamText, type CoreTool, type LanguageModel, type CoreMessage, type ToolCallPart } from 'ai';
+import {
+  streamText,
+  type CoreTool,
+  type LanguageModel,
+  type CoreMessage,
+  type ToolCallPart,
+} from 'ai';
 import { z } from 'zod';
 import { User } from '../../domain/entities/user.entity';
 import { AIService } from '../../domain/services/ai.service';
@@ -9,7 +15,10 @@ import { VirtualAssistanceService } from '../../domain/services/virtual-assistan
 import { randomUUID } from 'crypto';
 import { CacheService } from '../../application/services/cache.service';
 import { PromptService } from './prompt.service';
-import { MetricsService, ChatMetric } from '../../application/services/metrics.service';
+import {
+  MetricsService,
+  ChatMetric,
+} from '../../application/services/metrics.service';
 
 @Injectable()
 export class GeminiAIService implements AIService {
@@ -19,22 +28,29 @@ export class GeminiAIService implements AIService {
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject('VirtualAssistanceService') private readonly virtualAssistanceService: VirtualAssistanceService,
+    @Inject('VirtualAssistanceService')
+    private readonly virtualAssistanceService: VirtualAssistanceService,
     private readonly cacheService: CacheService,
     private readonly promptService: PromptService,
     private readonly metricsService: MetricsService,
-    ) {
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY');
+  ) {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>(
+      'GOOGLE_GENERATIVE_AI_API_KEY',
+    );
     this.primaryModel = google('gemini-2.0-flash-lite');
     this.fallbackModel = google('gemini-2.5-flash-lite');
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
-    this.apiBaseUrl = configuredBaseUrl || renderExternalUrl || 'http://localhost:3001';
+    this.apiBaseUrl =
+      configuredBaseUrl || renderExternalUrl || 'http://localhost:3001';
   }
 
   // Método mantido apenas para compatibilidade com process-api-chat-message.use-case.ts
-  async generateResponse(userMessage: string, userData: User | User[]): Promise<string> {
-    return "Este endpoint está descontinuado. Por favor, use o chat open (/chat/open) que possui todas as funcionalidades atualizadas.";
+  async generateResponse(
+    userMessage: string,
+    userData: User | User[],
+  ): Promise<string> {
+    return 'Este endpoint está descontinuado. Por favor, use o chat open (/chat/open) que possui todas as funcionalidades atualizadas.';
   }
 
   // Helper method to call streamText with fallback
@@ -59,18 +75,21 @@ export class GeminiAIService implements AIService {
       console.log('[AI] Primary model failed, analyzing error...', error?.name);
       // Check if it's a 503/overload error (check nested error objects too)
       const errorMessage = JSON.stringify(error);
-      const isOverloadError = errorMessage.includes('overloaded') ||
-                            errorMessage.includes('503') ||
-                            errorMessage.includes('UNAVAILABLE') ||
-                            error?.statusCode === 503 ||
-                            error?.lastError?.statusCode === 503 ||
-                            error?.data?.error?.code === 503 ||
-                            error?.data?.error?.status === 'UNAVAILABLE';
+      const isOverloadError =
+        errorMessage.includes('overloaded') ||
+        errorMessage.includes('503') ||
+        errorMessage.includes('UNAVAILABLE') ||
+        error?.statusCode === 503 ||
+        error?.lastError?.statusCode === 503 ||
+        error?.data?.error?.code === 503 ||
+        error?.data?.error?.status === 'UNAVAILABLE';
 
       console.log('[AI] Is overload error?', isOverloadError);
 
       if (isOverloadError) {
-        console.log('[AI] Primary model overloaded, falling back to gemini-2.5-flash-lite');
+        console.log(
+          '[AI] Primary model overloaded, falling back to gemini-2.5-flash-lite',
+        );
         try {
           return await streamText({
             model: this.fallbackModel,
@@ -89,30 +108,46 @@ export class GeminiAIService implements AIService {
       }
     }
   }
-  
-  async processToolCall(actor: User, userMessage: string, availableTools: Record<string, CoreTool>): Promise<string> {
+
+  async processToolCall(
+    actor: User,
+    userMessage: string,
+    availableTools: Record<string, CoreTool>,
+    maxToolDepth: number = 2, // Limite de chamadas de tools em sequência
+  ): Promise<string> {
     const startTime = Date.now();
     console.log('[DEBUG] processToolCall called with:', actor.cpf, userMessage);
-    
+
     // Buscar histórico de conversa do cache
     const conversationKey = `conversation_${actor.cpf}`;
-    const existingMessages: CoreMessage[] = this.cacheService.get(conversationKey) || [];
-    
+    const existingMessages: CoreMessage[] =
+      this.cacheService.get(conversationKey) || [];
+
     // Adicionar nova mensagem do usuário
-    const messages: CoreMessage[] = [...existingMessages, { role: 'user', content: userMessage }];
-    
+    const messages: CoreMessage[] = [
+      ...existingMessages,
+      { role: 'user', content: userMessage },
+    ];
+
     // Limitar histórico para evitar contexto muito grande (últimas 3 mensagens)
     const trimmedMessages = messages.slice(-3);
 
     // Métricas de tokens
     const systemPrompt = this.promptService.getSystemPrompt(actor);
-    const estimatedInputTokens = this.estimateTokens(systemPrompt) + 
-      trimmedMessages.reduce((acc, msg) => acc + this.estimateTokens(JSON.stringify(msg.content)), 0);
-    
+    const estimatedInputTokens =
+      this.estimateTokens(systemPrompt) +
+      trimmedMessages.reduce(
+        (acc, msg) => acc + this.estimateTokens(JSON.stringify(msg.content)),
+        0,
+      );
+
     console.log('[METRICS] Estimated input tokens:', estimatedInputTokens);
-    console.log('[METRICS] Available tools:', Object.keys(availableTools).length);
+    console.log(
+      '[METRICS] Available tools:',
+      Object.keys(availableTools).length,
+    );
     console.log('[METRICS] Message history length:', trimmedMessages.length);
-    
+
     let result;
     let usedFallback = false;
 
@@ -124,18 +159,24 @@ export class GeminiAIService implements AIService {
         tools: availableTools,
       });
     } catch (primaryError: any) {
-      console.error('[AI] Primary model failed during stream, trying fallback...', primaryError?.name);
+      console.error(
+        '[AI] Primary model failed during stream, trying fallback...',
+        primaryError?.name,
+      );
 
       // Detectar erro de overload
       const errorMessage = JSON.stringify(primaryError);
-      const isOverloadError = errorMessage.includes('overloaded') ||
-                            errorMessage.includes('503') ||
-                            errorMessage.includes('UNAVAILABLE') ||
-                            primaryError?.statusCode === 503 ||
-                            primaryError?.data?.error?.code === 503;
+      const isOverloadError =
+        errorMessage.includes('overloaded') ||
+        errorMessage.includes('503') ||
+        errorMessage.includes('UNAVAILABLE') ||
+        primaryError?.statusCode === 503 ||
+        primaryError?.data?.error?.code === 503;
 
       if (isOverloadError) {
-        console.log('[AI] Overload detected, using fallback model (gemini-2.5-flash-lite)');
+        console.log(
+          '[AI] Overload detected, using fallback model (gemini-2.5-flash-lite)',
+        );
         usedFallback = true;
 
         // Tentar com modelo fallback
@@ -179,146 +220,277 @@ export class GeminiAIService implements AIService {
 
     // If the model decides to call tools, we execute them and send the results back
     if (toolCalls.length > 0) {
-      trimmedMessages.push({ role: 'assistant', content: toolCalls });
+      let currentDepth = 0;
+      let currentMessages = trimmedMessages;
+      let allToolCalls: ToolCallPart[] = toolCalls;
+      let finalResponseText = '';
 
-      const toolResults = await Promise.all(
-        toolCalls.map(async (toolCall) => {
-          const result = await this.executeTool(toolCall);
-          return {
-            type: 'tool-result' as const,
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result,
-          };
-        }),
-      );
+      // Processar tool calls recursivamente até maxToolDepth
+      while (allToolCalls.length > 0 && currentDepth < maxToolDepth) {
+        currentDepth++;
+        console.log(
+          `[AI] Processing tool calls at depth ${currentDepth}/${maxToolDepth}`,
+        );
 
-      trimmedMessages.push({ role: 'tool', content: toolResults });
+        currentMessages.push({ role: 'assistant', content: allToolCalls });
 
-      // Primeiro tentar usar fallback inteligente, se não funcionar, fazer segunda chamada
-      let finalResponseText = this.buildFallbackResponseFromToolResults(toolResults, userMessage);
-      
-      // Se o fallback não conseguiu gerar uma resposta adequada, aí sim fazer segunda chamada
-      if (!finalResponseText || finalResponseText.includes('não recebi um texto final da IA') || finalResponseText.length < 10) {
-        console.log('[AI] Fallback insufficient, making second AI call');
+        const toolResults = await Promise.all(
+          allToolCalls.map(async (toolCall) => {
+            const result = await this.executeTool(toolCall);
+            return {
+              type: 'tool-result' as const,
+              toolCallId: toolCall.toolCallId,
+              toolName: toolCall.toolName,
+              result,
+            };
+          }),
+        );
+
+        currentMessages.push({ role: 'tool', content: toolResults });
+
+        // Tentar fallback inteligente primeiro
+        finalResponseText = this.buildFallbackResponseFromToolResults(
+          toolResults,
+          userMessage,
+        );
+
+        // Se fallback funcionar OU chegamos no limite de profundidade, parar
+        if (finalResponseText && finalResponseText.length >= 10) {
+          console.log('[AI] Using intelligent fallback, stopping tool calls');
+          break;
+        }
+
+        if (currentDepth >= maxToolDepth) {
+          console.log('[AI] Reached max tool depth, forcing final response');
+          break;
+        }
+
+        // Fazer próxima chamada da IA (sempre com tools disponíveis)
+        console.log(`[AI] Making AI call for depth ${currentDepth + 1}`);
         try {
-          const finalResult = await this.callStreamTextWithFallback({
+          const nextResult = await this.callStreamTextWithFallback({
             system: this.promptService.getSystemPrompt(actor),
-            messages: trimmedMessages,
+            messages: currentMessages,
+            tools: availableTools, // ✅ Sempre passar tools
           });
-          for await (const part of finalResult.fullStream) {
+
+          const nextToolCalls: ToolCallPart[] = [];
+          finalResponseText = ''; // Reset para capturar nova resposta
+
+          for await (const part of nextResult.fullStream) {
             if (part.type === 'text-delta') {
               finalResponseText += part.textDelta;
+            } else if (part.type === 'tool-call') {
+              nextToolCalls.push(part);
             } else if (part.type === 'error') {
-              console.error('Final stream error:', part.error);
+              console.error(
+                'Stream error at depth',
+                currentDepth + 1,
+                ':',
+                part.error,
+              );
             }
           }
-        } catch (secondCallError: any) {
-          console.error('[AI] Second call failed, trying fallback model...', secondCallError?.name);
 
-          // Detectar erro de overload na segunda chamada
-          const errorMessage = JSON.stringify(secondCallError);
-          const isOverloadError = errorMessage.includes('overloaded') ||
-                                errorMessage.includes('503') ||
-                                errorMessage.includes('UNAVAILABLE') ||
-                                secondCallError?.statusCode === 503 ||
-                                secondCallError?.data?.error?.code === 503;
+          // Se a IA chamou mais tools, continuar no loop
+          if (nextToolCalls.length > 0) {
+            console.log(
+              `[AI] AI made ${nextToolCalls.length} tool calls:`,
+              nextToolCalls.map((tc) => tc.toolName),
+            );
+            allToolCalls = nextToolCalls;
+            // Continue no while loop
+          } else {
+            // Se não chamou tools, temos a resposta final
+            console.log('[AI] No more tool calls, got final response');
+            break;
+          }
+        } catch (nextCallError: any) {
+          console.error(
+            `[AI] Call at depth ${currentDepth + 1} failed:`,
+            nextCallError?.name,
+          );
+
+          // Detectar erro de overload
+          const errorMessage = JSON.stringify(nextCallError);
+          const isOverloadError =
+            errorMessage.includes('overloaded') ||
+            errorMessage.includes('503') ||
+            errorMessage.includes('UNAVAILABLE') ||
+            nextCallError?.statusCode === 503 ||
+            nextCallError?.data?.error?.code === 503;
 
           if (isOverloadError) {
-            console.log('[AI] Second call overloaded, using fallback model');
+            console.log('[AI] Overload detected, using fallback model');
             usedFallback = true;
 
             try {
               const fallbackResult = await streamText({
                 model: this.fallbackModel,
                 system: this.promptService.getSystemPrompt(actor),
-                messages: trimmedMessages,
+                messages: currentMessages,
+                tools: availableTools,
                 maxRetries: 2,
               });
+
+              const fallbackToolCalls: ToolCallPart[] = [];
+              finalResponseText = '';
+
               for await (const part of fallbackResult.fullStream) {
                 if (part.type === 'text-delta') {
                   finalResponseText += part.textDelta;
+                } else if (part.type === 'tool-call') {
+                  fallbackToolCalls.push(part);
                 } else if (part.type === 'error') {
                   console.error('Fallback stream error:', part.error);
                 }
               }
+
+              // Se fallback chamou tools, continuar processando
+              if (fallbackToolCalls.length > 0) {
+                allToolCalls = fallbackToolCalls;
+              } else {
+                // Tem resposta final
+                break;
+              }
             } catch (fallbackError) {
-              console.error('[AI] Fallback also failed, keeping intelligent fallback response');
+              console.error(
+                '[AI] Fallback also failed, using intelligent fallback response',
+              );
               // Manter fallback como resposta se tudo falhar
+              break;
             }
           } else {
-            // Se não for erro de overload, manter resposta de fallback inteligente
-            console.error('[AI] Non-overload error, keeping intelligent fallback response');
+            // Se não for erro de overload, parar
+            console.error('[AI] Non-overload error, stopping tool call loop');
+            break;
           }
         }
-      } else {
-        console.log('[AI] Using intelligent fallback, skipping second AI call');
+      }
+
+      // Se não temos resposta final após o loop, fazer última tentativa
+      if (!finalResponseText || finalResponseText.length < 10) {
+        console.log('[AI] Making final call to get response');
+        try {
+          const finalResult = await this.callStreamTextWithFallback({
+            system: this.promptService.getSystemPrompt(actor),
+            messages: currentMessages,
+            // Sem tools na última chamada para garantir resposta
+          });
+          finalResponseText = '';
+          for await (const part of finalResult.fullStream) {
+            if (part.type === 'text-delta') {
+              finalResponseText += part.textDelta;
+            }
+          }
+        } catch (error) {
+          console.error('[AI] Final call failed, using fallback text');
+          finalResponseText = 'Dados obtidos com sucesso! Como posso ajudá-lo?';
+        }
       }
 
       // Salvar conversa completa no cache (com ferramentas)
       const updatedMessages = [
-        ...trimmedMessages,
-        { role: 'assistant', content: finalResponseText }
+        ...currentMessages,
+        { role: 'assistant', content: finalResponseText },
       ];
       this.cacheService.set(conversationKey, updatedMessages, 3600000); // Cache por 1 hora (sessão)
-      
+
       // Métricas finais (com tools)
       const endTime = Date.now();
       const responseTime = endTime - startTime;
 
       // Use real token counts from AI SDK if available, otherwise estimate
       const realInputTokens = result.usage?.inputTokens || estimatedInputTokens;
-      const realOutputTokens = result.usage?.outputTokens || this.estimateTokens(finalResponseText);
-      const totalTokens = result.usage?.totalTokens || (realInputTokens + realOutputTokens);
+      const realOutputTokens =
+        result.usage?.outputTokens || this.estimateTokens(finalResponseText);
+      const totalTokens =
+        result.usage?.totalTokens || realInputTokens + realOutputTokens;
 
       // Cost calculation for Gemini 2.0 Flash-Lite (Primary) and Gemini 2.0 Flash (Fallback)
       // Both models: $0.075 per 1M input tokens, $0.30 per 1M output tokens
-      const estimatedCost = (realInputTokens * 0.075 + realOutputTokens * 0.30) / 1000000;
+      const estimatedCost =
+        (realInputTokens * 0.075 + realOutputTokens * 0.3) / 1000000;
       const toolCallsCount = toolCalls.length;
-      const cacheHitsCount = toolResults.filter(tr => {
-        // Verificar se usou cache checando se o log foi impresso
-        return tr.result && typeof tr.result === 'object';
-      }).length;
-      
+
       console.log('[METRICS] Response time:', responseTime, 'ms');
-      console.log('[METRICS] Tool calls made:', toolCallsCount);
-      console.log('[METRICS] Cache hits:', cacheHitsCount);
-      console.log('[METRICS] Real tokens used - Input:', realInputTokens, 'Output:', realOutputTokens, 'Total:', totalTokens);
+      console.log('[METRICS] Tool calls made at depth 1:', toolCallsCount);
+      console.log('[METRICS] Total depth reached:', currentDepth);
+      console.log(
+        '[METRICS] Real tokens used - Input:',
+        realInputTokens,
+        'Output:',
+        realOutputTokens,
+        'Total:',
+        totalTokens,
+      );
       console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
 
       // Gravar métrica
-      this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, toolCalls.map(tc => tc.toolName), cacheHitsCount, usedFallback);
-      
+      this.recordMetric(
+        actor,
+        userMessage,
+        responseTime,
+        realInputTokens,
+        realOutputTokens,
+        totalTokens,
+        estimatedCost,
+        toolCalls.map((tc) => tc.toolName),
+        currentDepth, // Usar profundidade ao invés de cache hits
+        usedFallback,
+      );
+
       return finalResponseText;
     }
 
     // Se nenhuma ferramenta foi chamada, salvamos a conversa simples
     const updatedMessages = [
       ...trimmedMessages,
-      { role: 'assistant', content: textContent }
+      { role: 'assistant', content: textContent },
     ];
     this.cacheService.set(conversationKey, updatedMessages, 3600000); // Cache por 1 hora (sessão)
-    
+
     // Métricas finais (sem tools)
     const endTime = Date.now();
     const responseTime = endTime - startTime;
 
     // Use real token counts from AI SDK if available, otherwise estimate
     const realInputTokens = result.usage?.inputTokens || estimatedInputTokens;
-    const realOutputTokens = result.usage?.outputTokens || this.estimateTokens(textContent);
-    const totalTokens = result.usage?.totalTokens || (realInputTokens + realOutputTokens);
+    const realOutputTokens =
+      result.usage?.outputTokens || this.estimateTokens(textContent);
+    const totalTokens =
+      result.usage?.totalTokens || realInputTokens + realOutputTokens;
 
     // Cost calculation for Gemini 2.0 Flash-Lite (Primary) and Gemini 2.0 Flash (Fallback)
     // Both models: $0.075 per 1M input tokens, $0.30 per 1M output tokens
-    const estimatedCost = (realInputTokens * 0.075 + realOutputTokens * 0.30) / 1000000;
-    
+    const estimatedCost =
+      (realInputTokens * 0.075 + realOutputTokens * 0.3) / 1000000;
+
     console.log('[METRICS] Response time:', responseTime, 'ms');
-    console.log('[METRICS] Real tokens used - Input:', realInputTokens, 'Output:', realOutputTokens, 'Total:', totalTokens);
+    console.log(
+      '[METRICS] Real tokens used - Input:',
+      realInputTokens,
+      'Output:',
+      realOutputTokens,
+      'Total:',
+      totalTokens,
+    );
     console.log('[METRICS] Estimated cost: $', estimatedCost.toFixed(6));
 
     // Gravar métrica (sem tools)
-    this.recordMetric(actor, userMessage, responseTime, realInputTokens, realOutputTokens, totalTokens, estimatedCost, [], 0, usedFallback);
-    
+    this.recordMetric(
+      actor,
+      userMessage,
+      responseTime,
+      realInputTokens,
+      realOutputTokens,
+      totalTokens,
+      estimatedCost,
+      [],
+      0,
+      usedFallback,
+    );
+
     return textContent;
   }
 
@@ -329,16 +501,16 @@ export class GeminiAIService implements AIService {
 
   // Gravar métrica da interação
   private recordMetric(
-    actor: User, 
-    message: string, 
-    responseTime: number, 
-    inputTokens: number, 
-    outputTokens: number, 
-    totalTokens: number, 
-    cost: number, 
-    toolsUsed: string[], 
-    cacheHits: number, 
-    fallbackUsed: boolean
+    actor: User,
+    message: string,
+    responseTime: number,
+    inputTokens: number,
+    outputTokens: number,
+    totalTokens: number,
+    cost: number,
+    toolsUsed: string[],
+    cacheHits: number,
+    fallbackUsed: boolean,
   ): void {
     const metric: ChatMetric = {
       timestamp: Date.now(),
@@ -352,20 +524,23 @@ export class GeminiAIService implements AIService {
       estimatedCost: cost,
       toolsUsed,
       cacheHits,
-      fallbackUsed
+      fallbackUsed,
     };
-    
+
     this.metricsService.recordChatMetric(metric);
   }
 
   // Build a concise human-friendly response from tool results when the model doesn't emit text
   // Agora o fallback é mais simples - deixa a IA fazer o trabalho de formatação na segunda chamada
-  private buildFallbackResponseFromToolResults(toolResults: Array<{ toolName: string; result: any }>, userMessage: string): string {
+  private buildFallbackResponseFromToolResults(
+    toolResults: Array<{ toolName: string; result: any }>,
+    userMessage: string,
+  ): string {
     try {
       // Para casos simples onde conseguimos responder diretamente
       if (toolResults.length === 1) {
         const tr = toolResults[0];
-        
+
         // Relatório gerado
         if (tr.toolName === 'generateReport') {
           if (tr.result && tr.result.downloadUrl) {
@@ -374,9 +549,13 @@ export class GeminiAIService implements AIService {
             return `❌ Erro ao gerar relatório: ${tr.result.error}`;
           }
         }
-        
+
         // Pessoa não encontrada ou sugestão de similar
-        if (tr.toolName === 'findPersonByName' && tr.result && tr.result.error) {
+        if (
+          tr.toolName === 'findPersonByName' &&
+          tr.result &&
+          tr.result.error
+        ) {
           if (tr.result.suggestion) {
             // Se tem sugestão, mostrar dados da pessoa similar
             const person = tr.result.suggestion;
@@ -385,7 +564,7 @@ export class GeminiAIService implements AIService {
           return tr.result.error;
         }
       }
-      
+
       // Para outros casos, forçar segunda chamada da IA que agora tem instruções melhores
       return '';
     } catch (err) {
@@ -420,8 +599,11 @@ export class GeminiAIService implements AIService {
       return '';
     }
     const subset = items.slice(0, maxItems);
-    const rendered = subset.map((item, idx) => `- ${this.previewObject(item)}`).join('\n');
-    const more = items.length > maxItems ? `\n... e mais ${items.length - maxItems}.` : '';
+    const rendered = subset
+      .map((item, idx) => `- ${this.previewObject(item)}`)
+      .join('\n');
+    const more =
+      items.length > maxItems ? `\n... e mais ${items.length - maxItems}.` : '';
     return `${rendered}${more}`;
   }
 
@@ -432,22 +614,38 @@ export class GeminiAIService implements AIService {
     // Try well-known shapes first
     if (obj.studentName && obj.taskName) {
       const date = new Date(obj.scheduledStartTo).toLocaleDateString('pt-BR');
-      const startTime = new Date(obj.startedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const endTime = new Date(obj.scheduledEndTo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const startTime = new Date(obj.startedAt).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const endTime = new Date(obj.scheduledEndTo).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
       return `${obj.studentName} — ${obj.taskName} em ${obj.internshipLocationName} (${date}, ${startTime}-${endTime})`;
     }
     if (obj.taskName && obj.preceptorNames) {
       const date = new Date(obj.scheduledStartTo).toLocaleDateString('pt-BR');
-      const startTime = new Date(obj.scheduledStartTo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const endTime = new Date(obj.scheduledEndTo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const startTime = new Date(obj.scheduledStartTo).toLocaleTimeString(
+        'pt-BR',
+        { hour: '2-digit', minute: '2-digit' },
+      );
+      const endTime = new Date(obj.scheduledEndTo).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
       return `${obj.taskName} — ${obj.internshipLocationName} (${date}, ${startTime}-${endTime}); Preceptores: ${obj.preceptorNames.join(', ')}`;
     }
     if (obj.name && obj.email && obj.cpf) {
-      const groups = obj.groupNames ? `; Grupos: ${obj.groupNames.join(', ')}` : '';
+      const groups = obj.groupNames
+        ? `; Grupos: ${obj.groupNames.join(', ')}`
+        : '';
       return `${obj.name} (CPF: ${obj.cpf}); Email: ${obj.email}${groups}`;
     }
     // Generic compact rendering (first 4 keys)
-    const entries = Object.entries(obj).slice(0, 4).map(([k, v]) => `${k}: ${v}`);
+    const entries = Object.entries(obj)
+      .slice(0, 4)
+      .map(([k, v]) => `${k}: ${v}`);
     return entries.join(' | ');
   }
 
@@ -458,54 +656,51 @@ export class GeminiAIService implements AIService {
 
   private filterDataByFields(data: any, fieldsRequested: string): any {
     if (!data) return data;
-    
+
     // Mapear campos solicitados para campos dos dados
     const fieldMapping: { [key: string]: string[] } = {
-      'nome': ['studentName', 'coordinatorName', 'name'],
-      'email': ['studentEmail', 'coordinatorEmail', 'email'],
-      'telefone': ['studentPhone', 'coordinatorPhone', 'phone'],
-      'grupos': ['groupNames'],
-      'instituição': ['organizationsAndCourses'],
-      'cursos': ['organizationsAndCourses'],
+      nome: ['studentName', 'coordinatorName', 'name'],
+      email: ['studentEmail', 'coordinatorEmail', 'email'],
+      telefone: ['studentPhone', 'coordinatorPhone', 'phone'],
+      grupos: ['groupNames'],
+      instituição: ['organizationsAndCourses'],
+      cursos: ['organizationsAndCourses'],
     };
-    
+
     // Extrair campos solicitados da string
     const requestedLower = fieldsRequested.toLowerCase();
     const fieldsToInclude = new Set<string>();
-    
+
     Object.entries(fieldMapping).forEach(([keyword, fields]) => {
       if (requestedLower.includes(keyword)) {
-        fields.forEach(field => fieldsToInclude.add(field));
+        fields.forEach((field) => fieldsToInclude.add(field));
       }
     });
-    
+
     // Se não conseguir mapear campos, retornar dados originais
     if (fieldsToInclude.size === 0) {
       return data;
     }
-    
+
     // Filtrar dados
     if (Array.isArray(data)) {
-      return data.map(item => this.filterSingleItem(item, fieldsToInclude));
+      return data.map((item) => this.filterSingleItem(item, fieldsToInclude));
     } else {
       return this.filterSingleItem(data, fieldsToInclude);
     }
   }
-  
+
   private filterSingleItem(item: any, fieldsToInclude: Set<string>): any {
     const filteredItem: any = {};
-    
-    fieldsToInclude.forEach(field => {
+
+    fieldsToInclude.forEach((field) => {
       if (item.hasOwnProperty(field)) {
         filteredItem[field] = item[field];
       }
     });
-    
+
     return filteredItem;
   }
-
-
-
 
   // Gerar chave específica do cache para cada tipo de tool
   private getToolCacheKey(toolName: string, cpf: string): string {
@@ -515,71 +710,118 @@ export class GeminiAIService implements AIService {
   // This method maps the AI's tool choice to our actual service methods.
   private async executeTool(toolCall: any): Promise<any> {
     const { toolName, args } = toolCall;
-    
+
     // Cache inteligente: verificar se já temos os dados deste tool
     const toolCacheKey = this.getToolCacheKey(toolName, args.cpf);
     const cachedResult = this.cacheService.get(toolCacheKey);
-    
+
     if (cachedResult) {
       console.log(`[CACHE] Using cached result for ${toolName}`);
       // Atualizar lastResult para permitir geração de relatórios
-      this.cacheService.set(this.getLastResultCacheKey(args.cpf), cachedResult, 3600000);
+      this.cacheService.set(
+        this.getLastResultCacheKey(args.cpf),
+        cachedResult,
+        3600000,
+      );
       return cachedResult;
     }
-    
+
     let result: any; // To store the result of the data-fetching tools
-    
+
     switch (toolName) {
       case 'getCoordinatorsOngoingActivities':
-        result = await this.virtualAssistanceService.getCoordinatorsOngoingActivities(args.cpf);
+        result =
+          await this.virtualAssistanceService.getCoordinatorsOngoingActivities(
+            args.cpf,
+          );
         this.cacheService.set(toolCacheKey, result, 3600000); // Cache específico do tool
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000); // Cache do último resultado
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        ); // Cache do último resultado
         return result;
       case 'getCoordinatorsProfessionals':
-        result = await this.virtualAssistanceService.getCoordinatorsProfessionals(args.cpf);
+        result =
+          await this.virtualAssistanceService.getCoordinatorsProfessionals(
+            args.cpf,
+          );
         this.cacheService.set(toolCacheKey, result, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        );
         return result;
       case 'getCoordinatorsStudents':
-        result = await this.virtualAssistanceService.getCoordinatorsStudents(args.cpf);
+        result = await this.virtualAssistanceService.getCoordinatorsStudents(
+          args.cpf,
+        );
         this.cacheService.set(toolCacheKey, result, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        );
         return result;
       case 'getStudentsScheduledActivities':
-        result = await this.virtualAssistanceService.getStudentsScheduledActivities(args.cpf);
+        result =
+          await this.virtualAssistanceService.getStudentsScheduledActivities(
+            args.cpf,
+          );
         this.cacheService.set(toolCacheKey, result, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        );
         return result;
       case 'getStudentsProfessionals':
-        result = await this.virtualAssistanceService.getStudentsProfessionals(args.cpf);
+        result = await this.virtualAssistanceService.getStudentsProfessionals(
+          args.cpf,
+        );
 
         // Remover CPFs dos profissionais antes de retornar (privacidade)
-        const professionalsWithoutCpf = result.map(professional => ({
+        const professionalsWithoutCpf = result.map((professional) => ({
           name: professional.name,
           email: professional.email,
           phone: professional.phone,
-          groupNames: professional.groupNames
+          groupNames: professional.groupNames,
         }));
 
         this.cacheService.set(toolCacheKey, professionalsWithoutCpf, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), professionalsWithoutCpf, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          professionalsWithoutCpf,
+          3600000,
+        );
         return professionalsWithoutCpf;
-        
+
       case 'getStudentInfo':
         result = await this.virtualAssistanceService.getStudentInfo(args.cpf);
         this.cacheService.set(toolCacheKey, result, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        );
         return result;
       case 'getCoordinatorInfo':
-        result = await this.virtualAssistanceService.getCoordinatorInfo(args.cpf);
+        result = await this.virtualAssistanceService.getCoordinatorInfo(
+          args.cpf,
+        );
         this.cacheService.set(toolCacheKey, result, 3600000);
-        this.cacheService.set(this.getLastResultCacheKey(args.cpf), result, 3600000);
+        this.cacheService.set(
+          this.getLastResultCacheKey(args.cpf),
+          result,
+          3600000,
+        );
         return result;
-      
+
       case 'findPersonByName':
         const { name: searchName, cpf: searcherCpf } = args;
         let foundPerson: any = null;
-        
+
         // Função para normalizar texto (remover acentos e converter para lowercase)
         const normalizeText = (text: string): string => {
           return text
@@ -587,7 +829,7 @@ export class GeminiAIService implements AIService {
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, ''); // Remove acentos
         };
-        
+
         // Função para calcular distância de edição (Levenshtein distance)
         const editDistance = (a: string, b: string): number => {
           const matrix: number[][] = [];
@@ -605,38 +847,41 @@ export class GeminiAIService implements AIService {
                 matrix[i][j] = Math.min(
                   matrix[i - 1][j - 1] + 1,
                   matrix[i][j - 1] + 1,
-                  matrix[i - 1][j] + 1
+                  matrix[i - 1][j] + 1,
                 );
               }
             }
           }
           return matrix[b.length][a.length];
         };
-        
+
         // Buscar em profissionais primeiro (mais comum)
         try {
-          const professionalsRaw = await this.virtualAssistanceService.getStudentsProfessionals(searcherCpf);
+          const professionalsRaw =
+            await this.virtualAssistanceService.getStudentsProfessionals(
+              searcherCpf,
+            );
 
           // Filtrar CPFs (privacidade)
-          const professionals = professionalsRaw.map(professional => ({
+          const professionals = professionalsRaw.map((professional) => ({
             name: professional.name,
             email: professional.email,
             phone: professional.phone,
-            groupNames: professional.groupNames
+            groupNames: professional.groupNames,
           }));
           let exactMatch: any = null;
           let similarMatch: any = null;
 
           // Primeiro tentar busca exata (palavras completas)
-          exactMatch = professionals.find(person => {
+          exactMatch = professionals.find((person) => {
             const normalizedPersonName = normalizeText(person.name);
             const normalizedSearchName = normalizeText(searchName);
             const personWords = normalizedPersonName.split(' ');
             const searchWords = normalizedSearchName.split(' ');
 
             // Match exato: todas as palavras da busca devem ter correspondência exata
-            return searchWords.every(searchWord =>
-              personWords.some(personWord => personWord === searchWord)
+            return searchWords.every((searchWord) =>
+              personWords.some((personWord) => personWord === searchWord),
             );
           });
 
@@ -645,13 +890,15 @@ export class GeminiAIService implements AIService {
             foundPerson = exactMatch;
           } else {
             // Se não encontrou, tentar busca por palavras individuais com tolerância a erros
-            const searchWords = normalizeText(searchName).split(' ').filter(w => w.length >= 3);
+            const searchWords = normalizeText(searchName)
+              .split(' ')
+              .filter((w) => w.length >= 3);
 
-            similarMatch = professionals.find(person => {
+            similarMatch = professionals.find((person) => {
               const personWords = normalizeText(person.name).split(' ');
 
-              return searchWords.some(searchWord => {
-                return personWords.some(personWord => {
+              return searchWords.some((searchWord) => {
+                return personWords.some((personWord) => {
                   // Busca por similaridade mais rigorosa
                   if (searchWord.length >= 4 && personWord.length >= 4) {
                     const distance = editDistance(searchWord, personWord);
@@ -661,7 +908,9 @@ export class GeminiAIService implements AIService {
 
                     // Adicionar verificação de similaridade mínima
                     const minSimilarity = 0.75; // 75% de similaridade
-                    const similarity = 1 - (distance / Math.max(searchWord.length, personWord.length));
+                    const similarity =
+                      1 -
+                      distance / Math.max(searchWord.length, personWord.length);
 
                     return distance <= maxErrors && similarity >= minSimilarity;
                   }
@@ -673,20 +922,26 @@ export class GeminiAIService implements AIService {
 
             // Se encontrou similar, retornar mensagem informativa (sem CPF)
             if (similarMatch) {
-              console.log(`[SEARCH] Similar match found: ${similarMatch.name} for search "${searchName}"`);
+              console.log(
+                `[SEARCH] Similar match found: ${similarMatch.name} for search "${searchName}"`,
+              );
 
               // Remover CPF antes de retornar (privacidade)
               const similarMatchWithoutCpf = {
                 name: similarMatch.name,
                 email: similarMatch.email,
                 phone: similarMatch.phone,
-                groupNames: similarMatch.groupNames
+                groupNames: similarMatch.groupNames,
               };
 
-              this.cacheService.set(this.getLastResultCacheKey(searcherCpf), [similarMatchWithoutCpf], 3600000);
+              this.cacheService.set(
+                this.getLastResultCacheKey(searcherCpf),
+                [similarMatchWithoutCpf],
+                3600000,
+              );
               return {
                 error: `Não, mas você tem "${similarMatch.name}" que é parecido.`,
-                suggestion: similarMatchWithoutCpf
+                suggestion: similarMatchWithoutCpf,
               };
             }
           }
@@ -700,36 +955,48 @@ export class GeminiAIService implements AIService {
             name: foundPerson.name,
             email: foundPerson.email,
             phone: foundPerson.phone,
-            groupNames: foundPerson.groupNames
+            groupNames: foundPerson.groupNames,
           };
 
-          this.cacheService.set(this.getLastResultCacheKey(searcherCpf), [foundPersonWithoutCpf], 3600000);
+          this.cacheService.set(
+            this.getLastResultCacheKey(searcherCpf),
+            [foundPersonWithoutCpf],
+            3600000,
+          );
           return foundPersonWithoutCpf;
         } else {
           return { error: `Pessoa com nome "${searchName}" não encontrada.` };
         }
 
       case 'generateReport':
-        const lastData = this.cacheService.get(this.getLastResultCacheKey(args.cpf));
-        
+        const lastData = this.cacheService.get(
+          this.getLastResultCacheKey(args.cpf),
+        );
+
         if (!lastData) {
-          return { error: 'Não encontrei dados para gerar um relatório. Por favor, faça uma busca primeiro.' };
+          return {
+            error:
+              'Não encontrei dados para gerar um relatório. Por favor, faça uma busca primeiro.',
+          };
         }
-        
+
         const { format, fieldsRequested } = args;
-        
+
         // Filtrar dados se campos específicos foram solicitados
         let dataToReport = lastData;
         if (fieldsRequested) {
           dataToReport = this.filterDataByFields(lastData, fieldsRequested);
         }
-        
+
         // Determinar título baseado no tipo de dados
         let title = fieldsRequested ? `Dados Solicitados` : 'Dados';
         if (Array.isArray(dataToReport) && dataToReport.length > 0) {
           if (dataToReport[0].studentName && dataToReport[0].taskName) {
             title = 'Atividades em Andamento';
-          } else if (dataToReport[0].taskName && dataToReport[0].preceptorNames) {
+          } else if (
+            dataToReport[0].taskName &&
+            dataToReport[0].preceptorNames
+          ) {
             title = 'Atividades Agendadas';
           } else if (dataToReport[0].name && dataToReport[0].email) {
             if (dataToReport[0].groupNames) {
@@ -738,15 +1005,23 @@ export class GeminiAIService implements AIService {
               title = 'Lista de Estudantes';
             }
           }
-        } else if (dataToReport && typeof dataToReport === 'object' && !Array.isArray(dataToReport)) {
+        } else if (
+          dataToReport &&
+          typeof dataToReport === 'object' &&
+          !Array.isArray(dataToReport)
+        ) {
           // Dados de estudante individual
           if (dataToReport.studentName || dataToReport.name) {
-            title = fieldsRequested ? `Dados do Estudante - ${fieldsRequested}` : 'Dados do Estudante';
+            title = fieldsRequested
+              ? `Dados do Estudante - ${fieldsRequested}`
+              : 'Dados do Estudante';
           } else if (dataToReport.coordinatorName) {
-            title = fieldsRequested ? `Dados do Coordenador - ${fieldsRequested}` : 'Dados do Coordenador';
+            title = fieldsRequested
+              ? `Dados do Coordenador - ${fieldsRequested}`
+              : 'Dados do Coordenador';
           }
         }
-        
+
         const cacheId = randomUUID();
         this.cacheService.set(cacheId, { data: dataToReport, title });
         const downloadUrl = `${this.apiBaseUrl}/reports/from-cache/${cacheId}/${format}`;
@@ -756,6 +1031,4 @@ export class GeminiAIService implements AIService {
         return { error: 'Unknown tool' };
     }
   }
-
-  
-} 
+}
