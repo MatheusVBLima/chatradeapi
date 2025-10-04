@@ -17,7 +17,9 @@ enum HybridChatFlowState {
   START = 'START',
   AWAITING_USER_TYPE = 'AWAITING_USER_TYPE',
   AWAITING_STUDENT_CPF = 'AWAITING_STUDENT_CPF',
+  AWAITING_STUDENT_PHONE = 'AWAITING_STUDENT_PHONE',
   AWAITING_COORDINATOR_CPF = 'AWAITING_COORDINATOR_CPF',
+  AWAITING_COORDINATOR_PHONE = 'AWAITING_COORDINATOR_PHONE',
   STUDENT_MENU = 'STUDENT_MENU',
   AWAITING_STUDENT_MENU_CHOICE = 'AWAITING_STUDENT_MENU_CHOICE',
   AWAITING_STUDENT_HELP_CHOICE = 'AWAITING_STUDENT_HELP_CHOICE',
@@ -41,6 +43,7 @@ interface HybridChatState {
     studentId?: string;
     userToken?: string;
     userType?: 'student' | 'coordinator';
+    environment?: ChatEnvironment;
   };
 }
 
@@ -102,7 +105,11 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     @Body() request: HybridChatRequestDto,
   ): Promise<HybridChatResponseDto> {
     try {
-      const result = await this.handle(request.message, request.state || null);
+      const result = await this.handle(
+        request.message,
+        request.state || null,
+        request.environment,
+      );
 
       return {
         response: result.response,
@@ -122,21 +129,28 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
   private async handle(
     message: string,
     state: HybridChatState | null,
+    environment: ChatEnvironment,
   ): Promise<{ response: string; nextState: HybridChatState | null }> {
     const currentState = state?.currentState || HybridChatFlowState.START;
 
     switch (currentState) {
       case HybridChatFlowState.START:
-        return this.handleStart();
+        return this.handleStart(environment);
 
       case HybridChatFlowState.AWAITING_USER_TYPE:
-        return this.handleUserTypeResponse(message, state!);
+        return this.handleUserTypeResponse(message, state!, environment);
 
       case HybridChatFlowState.AWAITING_STUDENT_CPF:
-        return this.handleStudentCpfResponse(message, state!);
+        return this.handleStudentCpfResponse(message, state!, environment);
+
+      case HybridChatFlowState.AWAITING_STUDENT_PHONE:
+        return await this.handleStudentPhoneResponse(message, state!);
 
       case HybridChatFlowState.AWAITING_COORDINATOR_CPF:
-        return this.handleCoordinatorCpfResponse(message, state!);
+        return this.handleCoordinatorCpfResponse(message, state!, environment);
+
+      case HybridChatFlowState.AWAITING_COORDINATOR_PHONE:
+        return await this.handleCoordinatorPhoneResponse(message, state!);
 
       case HybridChatFlowState.AWAITING_STUDENT_MENU_CHOICE:
         return this.handleStudentMenuChoice(message, state!);
@@ -167,7 +181,9 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     }
   }
 
-  private handleStart(): { response: string; nextState: HybridChatState } {
+  private handleStart(
+    environment: ChatEnvironment,
+  ): { response: string; nextState: HybridChatState } {
     const response = `Olá! Bem-vindo ao atendimento RADE! Para começar, me diga qual seu perfil:
 
 1 - Sou Estudante
@@ -178,7 +194,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
       response,
       nextState: {
         currentState: HybridChatFlowState.AWAITING_USER_TYPE,
-        data: {},
+        data: { environment },
       },
     };
   }
@@ -186,6 +202,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
   private handleUserTypeResponse(
     message: string,
     state: HybridChatState,
+    environment: ChatEnvironment,
   ): { response: string; nextState: HybridChatState } {
     const choice = message.trim();
 
@@ -195,7 +212,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
           'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
         nextState: {
           currentState: HybridChatFlowState.AWAITING_STUDENT_CPF,
-          data: state.data,
+          data: { ...state.data, environment },
         },
       };
     }
@@ -206,7 +223,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
           'Entendido. Para continuar, por favor, informe seu CPF (apenas números).',
         nextState: {
           currentState: HybridChatFlowState.AWAITING_COORDINATOR_CPF,
-          data: state.data,
+          data: { ...state.data, environment },
         },
       };
     }
@@ -236,24 +253,51 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
   private async handleStudentCpfResponse(
     message: string,
     state: HybridChatState,
+    environment: ChatEnvironment,
   ): Promise<{ response: string; nextState: HybridChatState }> {
     const cpf = message.trim();
 
-    // For now, just show menu (in real app would validate via API)
-    return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf });
+    // Se ambiente WEB, pedir telefone antes de mostrar menu
+    if (environment === ChatEnvironment.WEB) {
+      return {
+        response:
+          'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
+        nextState: {
+          currentState: HybridChatFlowState.AWAITING_STUDENT_PHONE,
+          data: { ...state.data, studentCpf: cpf, cpf: cpf, environment },
+        },
+      };
+    }
+
+    // Se MOBILE, Z-API detecta automaticamente o telefone
+    return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf, environment });
   }
 
   private async handleCoordinatorCpfResponse(
     message: string,
     state: HybridChatState,
+    environment: ChatEnvironment,
   ): Promise<{ response: string; nextState: HybridChatState }> {
     const cpf = message.trim();
 
-    // For now, just show menu (in real app would validate via API)
+    // Se ambiente WEB, pedir telefone antes de mostrar menu
+    if (environment === ChatEnvironment.WEB) {
+      return {
+        response:
+          'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
+        nextState: {
+          currentState: HybridChatFlowState.AWAITING_COORDINATOR_PHONE,
+          data: { ...state.data, coordinatorCpf: cpf, cpf: cpf, environment },
+        },
+      };
+    }
+
+    // Se MOBILE, Z-API detecta automaticamente o telefone
     return this.showCoordinatorMenu({
       ...state.data,
       coordinatorCpf: cpf,
       cpf: cpf,
+      environment,
     });
   }
 
@@ -976,5 +1020,83 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
     } catch (error) {
       this.logger.error('Erro ao enviar dados de novo usuário:', error);
     }
+  }
+
+  /**
+   * Handler para validar telefone do estudante (ambiente WEB)
+   */
+  private async handleStudentPhoneResponse(
+    message: string,
+    state: HybridChatState,
+  ): Promise<{ response: string; nextState: HybridChatState }> {
+    const telefone = message.trim();
+
+    // Validação básica de telefone (apenas números, 10-11 dígitos)
+    if (!/^\d{10,11}$/.test(telefone)) {
+      return {
+        response:
+          'Número de telefone inválido. Por favor, informe um telefone válido com DDD (exemplo: 11999999999):',
+        nextState: state,
+      };
+    }
+
+    // Validar CPF + telefone na API RADE
+    const cpf = state.data.studentCpf || state.data.cpf;
+    const authResult = await this.authenticateUser(cpf, telefone, 'student');
+
+    if (!authResult.token) {
+      return {
+        response: `CPF ou telefone não conferem com nossos registros. Por favor, verifique os dados e tente novamente.
+
+Informe seu telefone novamente (com DDD):`,
+        nextState: state,
+      };
+    }
+
+    // Autenticação bem-sucedida, mostrar menu
+    return this.showStudentMenu({
+      ...state.data,
+      userPhone: telefone,
+      userToken: authResult.token,
+    });
+  }
+
+  /**
+   * Handler para validar telefone do coordenador (ambiente WEB)
+   */
+  private async handleCoordinatorPhoneResponse(
+    message: string,
+    state: HybridChatState,
+  ): Promise<{ response: string; nextState: HybridChatState }> {
+    const telefone = message.trim();
+
+    // Validação básica de telefone (apenas números, 10-11 dígitos)
+    if (!/^\d{10,11}$/.test(telefone)) {
+      return {
+        response:
+          'Número de telefone inválido. Por favor, informe um telefone válido com DDD (exemplo: 11999999999):',
+        nextState: state,
+      };
+    }
+
+    // Validar CPF + telefone na API RADE
+    const cpf = state.data.coordinatorCpf || state.data.cpf;
+    const authResult = await this.authenticateUser(cpf, telefone, 'coordinator');
+
+    if (!authResult.token) {
+      return {
+        response: `CPF ou telefone não conferem com nossos registros. Por favor, verifique os dados e tente novamente.
+
+Informe seu telefone novamente (com DDD):`,
+        nextState: state,
+      };
+    }
+
+    // Autenticação bem-sucedida, mostrar menu
+    return this.showCoordinatorMenu({
+      ...state.data,
+      userPhone: telefone,
+      userToken: authResult.token,
+    });
   }
 }
