@@ -13,7 +13,7 @@
     "start:dev:staging": "cross-env NODE_ENV=staging npx nest start --watch",
     "start:dev:prod": "cross-env NODE_ENV=production npx nest start --watch",
     "start:debug": "npx nest start --debug --watch",
-    "start:prod": "cross-env NODE_ENV=production node --max-old-space-size=2048 dist/main",
+    "start:prod": "node --max-old-space-size=2048 dist/main",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
