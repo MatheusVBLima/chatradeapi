@@ -129,8 +129,9 @@ export class GeminiAIService implements AIService {
       { role: 'user', content: userMessage },
     ];
 
-    // Limitar histórico para evitar contexto muito grande (últimas 3 mensagens)
-    const trimmedMessages = messages.slice(-3);
+    // Limitar histórico para evitar contexto muito grande (últimas 7 mensagens)
+    // Aumentado para manter melhor contexto em conversas longas
+    const trimmedMessages = messages.slice(-7);
 
     // Métricas de tokens
     const systemPrompt = this.promptService.getSystemPrompt(actor);
@@ -654,6 +655,72 @@ export class GeminiAIService implements AIService {
     return `lastResult_${cpf}`;
   }
 
+  // Cache acumulativo para combinar múltiplos dados
+  private getAccumulatedDataCacheKey(cpf: string): string {
+    return `accumulatedData_${cpf}`;
+  }
+
+  private accumulateData(cpf: string, newData: any, toolName: string): void {
+    const cacheKey = this.getAccumulatedDataCacheKey(cpf);
+    const existing = this.cacheService.get(cacheKey) || {
+      items: [],
+      mostRecent: null,
+    };
+
+    // Adicionar novo dado com metadados
+    const newItem = {
+      toolName,
+      timestamp: Date.now(),
+      data: newData,
+    };
+
+    existing.items.push(newItem);
+
+    // Marcar como mais recente (para referências "desse", "aquele")
+    existing.mostRecent = newItem;
+
+    // Não há limite de itens - cache expira automaticamente após 1h (TTL)
+    // Conversas longas podem acumular quantos dados precisarem
+
+    this.cacheService.set(cacheKey, existing, 3600000); // Expira em 1 hora
+
+    console.log(
+      `[CACHE] Accumulated data for ${toolName}, total items: ${existing.items.length}`,
+    );
+  }
+
+  private getAccumulatedData(cpf: string): any[] {
+    const cacheKey = this.getAccumulatedDataCacheKey(cpf);
+    const accumulated = this.cacheService.get(cacheKey);
+    return accumulated?.items || [];
+  }
+
+  private getMostRecentData(cpf: string): any | null {
+    const cacheKey = this.getAccumulatedDataCacheKey(cpf);
+    const accumulated = this.cacheService.get(cacheKey);
+    return accumulated?.mostRecent?.data || null;
+  }
+
+  private clearAccumulatedData(cpf: string): void {
+    const cacheKey = this.getAccumulatedDataCacheKey(cpf);
+    this.cacheService.delete(cacheKey);
+  }
+
+  private combineAccumulatedData(accumulatedItems: any[]): any {
+    // Combinar dados de múltiplas tools em um único array ou objeto
+    const combined: any[] = [];
+
+    for (const item of accumulatedItems) {
+      if (Array.isArray(item.data)) {
+        combined.push(...item.data);
+      } else if (item.data && typeof item.data === 'object') {
+        combined.push(item.data);
+      }
+    }
+
+    return combined.length > 0 ? combined : accumulatedItems.map((i) => i.data);
+  }
+
   private filterDataByFields(data: any, fieldsRequested: string): any {
     if (!data) return data;
 
@@ -805,6 +872,8 @@ export class GeminiAIService implements AIService {
           result,
           3600000,
         );
+        // Acumular para combinar com outros dados se necessário
+        this.accumulateData(args.cpf, result, toolName);
         return result;
       case 'getCoordinatorInfo':
         result = await this.virtualAssistanceService.getCoordinatorInfo(
@@ -963,6 +1032,12 @@ export class GeminiAIService implements AIService {
             [foundPersonWithoutCpf],
             3600000,
           );
+          // Acumular para combinar com outros dados se necessário
+          this.accumulateData(
+            searcherCpf,
+            foundPersonWithoutCpf,
+            'findPersonByName',
+          );
           return foundPersonWithoutCpf;
         } else {
           return { error: `Pessoa com nome "${searchName}" não encontrada.` };
@@ -972,8 +1047,9 @@ export class GeminiAIService implements AIService {
         const lastData = this.cacheService.get(
           this.getLastResultCacheKey(args.cpf),
         );
+        const accumulatedData = this.getAccumulatedData(args.cpf);
 
-        if (!lastData) {
+        if (!lastData && accumulatedData.length === 0) {
           return {
             error:
               'Não encontrei dados para gerar um relatório. Por favor, faça uma busca primeiro.',
@@ -982,10 +1058,22 @@ export class GeminiAIService implements AIService {
 
         const { format, fieldsRequested } = args;
 
+        // Se tem múltiplos dados acumulados (ex: busca de estudante + preceptor), combinar
+        let dataToUse = lastData;
+        if (accumulatedData.length > 1) {
+          console.log(
+            `[REPORT] Combining ${accumulatedData.length} accumulated data sources`,
+          );
+          // Combinar dados de múltiplas tools
+          dataToUse = this.combineAccumulatedData(accumulatedData);
+          // Limpar cache acumulado após uso
+          this.clearAccumulatedData(args.cpf);
+        }
+
         // Filtrar dados se campos específicos foram solicitados
-        let dataToReport = lastData;
+        let dataToReport = dataToUse;
         if (fieldsRequested) {
-          dataToReport = this.filterDataByFields(lastData, fieldsRequested);
+          dataToReport = this.filterDataByFields(dataToUse, fieldsRequested);
         }
 
         // Determinar título baseado no tipo de dados
