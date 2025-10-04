@@ -369,7 +369,7 @@ export class GeminiAIService implements AIService {
         }
       }
 
-      // 🚨 VERIFICAÇÃO DE SEGURANÇA: Bloquear respostas com código
+      // 🚨 VERIFICAÇÃO DE SEGURANÇA: Bloquear respostas com código e forçar generateReport
       if (
         finalResponseText &&
         (finalResponseText.includes('tool_codeprint') ||
@@ -377,14 +377,28 @@ export class GeminiAIService implements AIService {
           finalResponseText.match(/default_api\./i))
       ) {
         console.error(
-          '[AI] ⛔️ DETECTED CODE IN RESPONSE! Forcing re-generation without tools',
+          '[AI] ⛔️ DETECTED CODE IN RESPONSE! Forcing direct generateReport execution',
         );
-        currentMessages.push({
-          role: 'user',
-          content:
-            '⛔️ VOCÊ RETORNOU CÓDIGO! Isso é PROIBIDO! Eu preciso que você EXECUTE a ferramenta generateReport, não que descreva ela. Tente novamente EXECUTANDO as ferramentas diretamente.',
-        });
-        finalResponseText = ''; // Forçar nova tentativa
+        try {
+          const forcedFormat =
+            this.detectRequestedFormatFromMessage(userMessage);
+          const forcedResult = await this.executeTool({
+            toolName: 'generateReport',
+            args: { cpf: actor.cpf, format: forcedFormat },
+            toolCallId: 'forced-generateReport',
+          });
+          if (forcedResult?.downloadUrl) {
+            finalResponseText = `Pronto! Aqui está seu relatório: ${forcedResult.downloadUrl}`;
+          } else {
+            finalResponseText =
+              forcedResult?.error ||
+              'Não consegui gerar o relatório agora. Por favor, tente novamente.';
+          }
+        } catch (e) {
+          console.error('[AI] Forced generateReport failed:', e);
+          finalResponseText =
+            'Não consegui gerar o relatório agora. Por favor, tente novamente.';
+        }
       }
 
       // Se não temos resposta final após o loop, fazer última tentativa
@@ -460,6 +474,38 @@ export class GeminiAIService implements AIService {
       );
 
       return finalResponseText;
+    }
+
+    // Se nenhuma ferramenta foi chamada, verificar se precisa forçar generateReport
+    const textHasCode =
+      !!textContent &&
+      (textContent.includes('tool_codeprint') ||
+        /generateReport\s*\(/i.test(textContent) ||
+        /default_api\./i.test(textContent));
+    const userWantsReport = /relat[óo]rio|pdf|csv|txt|exportar|download/i.test(
+      userMessage || '',
+    );
+
+    if (textHasCode || userWantsReport) {
+      try {
+        const forcedFormat = this.detectRequestedFormatFromMessage(userMessage);
+        const forcedResult = await this.executeTool({
+          toolName: 'generateReport',
+          args: { cpf: actor.cpf, format: forcedFormat },
+          toolCallId: 'forced-generateReport',
+        });
+        if (forcedResult?.downloadUrl) {
+          textContent = `Pronto! Aqui está seu relatório: ${forcedResult.downloadUrl}`;
+        } else if (forcedResult?.error) {
+          textContent = forcedResult.error;
+        }
+      } catch (e) {
+        console.error(
+          '[AI] Forced generateReport in no-tool branch failed:',
+          e,
+        );
+        // Mantém textContent original como fallback
+      }
     }
 
     // Se nenhuma ferramenta foi chamada, salvamos a conversa simples
@@ -785,6 +831,16 @@ export class GeminiAIService implements AIService {
     });
 
     return filteredItem;
+  }
+
+  private detectRequestedFormatFromMessage(
+    message: string,
+  ): 'pdf' | 'csv' | 'txt' {
+    const normalized = (message || '').toLowerCase();
+    if (normalized.includes('csv')) return 'csv';
+    if (normalized.includes('txt') || normalized.includes('texto'))
+      return 'txt';
+    return 'pdf';
   }
 
   // Gerar chave específica do cache para cada tipo de tool
