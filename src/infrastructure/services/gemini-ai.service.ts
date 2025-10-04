@@ -37,8 +37,8 @@ export class GeminiAIService implements AIService {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>(
       'GOOGLE_GENERATIVE_AI_API_KEY',
     );
-    this.primaryModel = google('gemini-2.0-flash-lite');
-    this.fallbackModel = google('gemini-2.5-flash-lite');
+    this.primaryModel = google('gemini-2.5-flash-lite');
+    this.fallbackModel = google('gemini-2.0-flash-lite');
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl =
@@ -63,7 +63,7 @@ export class GeminiAIService implements AIService {
 
     // Try primary model first (sem retry interno - faremos nosso próprio fallback)
     try {
-      console.log('[AI] Attempting with primary model (gemini-2.0-flash-lite)');
+      console.log('[AI] Attempting with primary model (gemini-2.5-flash-lite)');
       return await streamText({
         model: this.primaryModel,
         system,
@@ -185,7 +185,7 @@ export class GeminiAIService implements AIService {
 
       if (isOverloadError) {
         console.log(
-          '[AI] Overload detected, using fallback model (gemini-2.5-flash-lite)',
+          '[AI] Overload detected, using fallback model (gemini-2.0-flash-lite)',
         );
         usedFallback = true;
 
@@ -282,23 +282,6 @@ export class GeminiAIService implements AIService {
               console.log('[AI] Forcing generateReport at max depth');
               const forcedFormat =
                 this.detectRequestedFormatFromMessage(userMessage);
-              // Tentar refinar contexto: encontrar nome citado e garantir dados acumulados
-              const maybeName = this.extractRequestedPersonName(userMessage);
-              if (maybeName) {
-                try {
-                  await this.executeTool({
-                    toolName: 'findPersonByName',
-                    args: { cpf: actor.cpf, name: maybeName },
-                  });
-                } catch (e) {
-                  console.warn('[AI] findPersonByName during force failed:', e);
-                }
-              }
-              try {
-                await this.ensureStudentDataAccumulated(actor.cpf);
-              } catch (e) {
-                console.warn('[AI] ensureStudentDataAccumulated failed:', e);
-              }
               const forcedResult = await this.executeTool({
                 toolName: 'generateReport',
                 args: { cpf: actor.cpf, format: forcedFormat },
@@ -439,18 +422,6 @@ export class GeminiAIService implements AIService {
         try {
           const forcedFormat =
             this.detectRequestedFormatFromMessage(userMessage);
-          const maybeName = this.extractRequestedPersonName(userMessage);
-          try {
-            await this.ensureStudentDataAccumulated(actor.cpf);
-          } catch {}
-          if (maybeName) {
-            try {
-              await this.executeTool({
-                toolName: 'findPersonByName',
-                args: { cpf: actor.cpf, name: maybeName },
-              });
-            } catch {}
-          }
           const forcedResult = await this.executeTool({
             toolName: 'generateReport',
             args: { cpf: actor.cpf, format: forcedFormat },
@@ -541,7 +512,7 @@ export class GeminiAIService implements AIService {
       const totalTokens =
         result.usage?.totalTokens || realInputTokens + realOutputTokens;
 
-      // Cost calculation for Gemini 2.0 Flash-Lite (Primary) and Gemini 2.0 Flash (Fallback)
+      // Cost calculation for Gemini 2.5 Flash-Lite (Primary) and Gemini 2.0 Flash-Lite (Fallback)
       // Both models: $0.075 per 1M input tokens, $0.30 per 1M output tokens
       const estimatedCost =
         (realInputTokens * 0.075 + realOutputTokens * 0.3) / 1000000;
@@ -948,43 +919,6 @@ export class GeminiAIService implements AIService {
     return 'pdf';
   }
 
-  private extractRequestedPersonName(message: string): string | null {
-    if (!message) return null;
-    // Tenta capturar após "preceptor" ou "preceptora"
-    const preceptorMatch = message.match(
-      /preceptor(?:a)?\s+([\p{L}.'`^~\-\s]{2,})/iu,
-    );
-    if (preceptorMatch && preceptorMatch[1]) {
-      const raw = preceptorMatch[1]
-        .replace(/[\n\r]/g, ' ')
-        .replace(/[^\p{L}\s.'`^~\-]/giu, ' ')
-        .trim();
-      // Limita a até 4 palavras para evitar pegar frase inteira
-      return raw.split(/\s+/).slice(0, 4).join(' ').trim() || null;
-    }
-    // Tenta nomes entre aspas
-    const quoted = message.match(/["“”']([\p{L}\s.'`^~\-]{3,})["“”']/iu);
-    if (quoted && quoted[1]) {
-      return quoted[1].trim();
-    }
-    return null;
-  }
-
-  private async ensureStudentDataAccumulated(cpf: string): Promise<void> {
-    const items = this.getAccumulatedData(cpf);
-    const hasStudent = items.some((i) => {
-      const d = i?.data;
-      return d && typeof d === 'object' && (d.studentName || d.coordinatorName);
-    });
-    if (!hasStudent) {
-      try {
-        await this.executeTool({ toolName: 'getStudentInfo', args: { cpf } });
-      } catch (e) {
-        console.warn('[AI] ensureStudentDataAccumulated failed:', e);
-      }
-    }
-  }
-
   // Gerar chave específica do cache para cada tipo de tool
   private getToolCacheKey(toolName: string, cpf: string): string {
     return `tool_${toolName}_${cpf}`;
@@ -1289,55 +1223,6 @@ export class GeminiAIService implements AIService {
           this.clearAccumulatedData(args.cpf);
         }
 
-        // Heurística: se o usuário mencionou um nome de preceptor, manter apenas estudante + esse preceptor
-        try {
-          const maybeName = this.extractRequestedPersonName(
-            lastUserRequest || '',
-          );
-          if (maybeName) {
-            const nameNorm = maybeName.toLowerCase();
-            const isStudentObject = (obj: any) =>
-              obj &&
-              typeof obj === 'object' &&
-              (obj.studentName || obj.coordinatorName);
-            const isProfessional = (obj: any) =>
-              obj && typeof obj === 'object' && obj.name && obj.email;
-
-            if (Array.isArray(dataToUse)) {
-              const studentObj = dataToUse.find(isStudentObject);
-              const professionalObj = dataToUse.find(
-                (o) =>
-                  isProfessional(o) &&
-                  String(o.name).toLowerCase().includes(nameNorm),
-              );
-              const filtered: any[] = [];
-              if (studentObj) filtered.push(studentObj);
-              if (professionalObj) filtered.push(professionalObj);
-              if (filtered.length > 0) {
-                dataToUse = filtered;
-              }
-            } else if (dataToUse && typeof dataToUse === 'object') {
-              // Se só veio estudante, tentar puxar profissionais do cache e filtrar
-              const professionals = this.cacheService.get(
-                this.getToolCacheKey('getStudentsProfessionals', args.cpf),
-              ) as any[] | undefined;
-              if (professionals && professionals.length > 0) {
-                const professionalObj = professionals.find((p) =>
-                  String(p.name).toLowerCase().includes(nameNorm),
-                );
-                if (professionalObj) {
-                  dataToUse = [dataToUse, professionalObj];
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(
-            '[REPORT] Heuristic filter by requested name failed:',
-            e,
-          );
-        }
-
         // Filtrar dados se campos específicos foram solicitados
         let dataToReport = dataToUse;
         if (fieldsRequested) {
@@ -1355,56 +1240,17 @@ export class GeminiAIService implements AIService {
           ) {
             title = 'Atividades Agendadas';
           } else if (dataToReport[0].name && dataToReport[0].email) {
-            if (dataToReport[0].groupNames) {
-              title = 'Lista de Profissionais';
-            } else {
-              title = 'Lista de Estudantes';
-            }
+            title = 'Lista de Profissionais';
           }
         } else if (
           dataToReport &&
           typeof dataToReport === 'object' &&
           !Array.isArray(dataToReport)
         ) {
-          // Dados de estudante individual
-          if (dataToReport.studentName || dataToReport.name) {
-            title = fieldsRequested
-              ? `Dados do Estudante - ${fieldsRequested}`
-              : 'Dados do Estudante';
+          if (dataToReport.studentName) {
+            title = 'Dados do Estudante';
           } else if (dataToReport.coordinatorName) {
-            title = fieldsRequested
-              ? `Dados do Coordenador - ${fieldsRequested}`
-              : 'Dados do Coordenador';
-          }
-        }
-
-        // Tentativa de reduzir dados ao essencial se usuário pediu campos específicos
-        const normalizedRequest = (lastUserRequest || '').toLowerCase();
-        if (!fieldsRequested && normalizedRequest) {
-          const wantsOnlyEmail =
-            /apenas\s+meu\s+email|s[oó]\s+meu\s+email|somente\s+meu\s+email/.test(
-              normalizedRequest,
-            );
-          const wantsOnlyPreceptorName =
-            /nome\s+da\s+minha?\s+preceptor(a)?|nome\s+do\s+meu\s+preceptor/.test(
-              normalizedRequest,
-            );
-          if (wantsOnlyEmail || wantsOnlyPreceptorName) {
-            const slim: any[] = [];
-            const arr = Array.isArray(dataToReport)
-              ? dataToReport
-              : [dataToReport];
-            for (const item of arr) {
-              if (item.studentName || item.studentEmail) {
-                slim.push({ studentEmail: item.studentEmail });
-              } else if (item.name && item.email) {
-                slim.push({ name: item.name });
-              }
-            }
-            if (slim.length > 0) {
-              dataToReport = slim;
-              title = 'Dados Solicitados';
-            }
+            title = 'Dados do Coordenador';
           }
         }
 
