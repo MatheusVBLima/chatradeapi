@@ -262,7 +262,38 @@ export class GeminiAIService implements AIService {
         }
 
         if (currentDepth >= maxToolDepth) {
-          console.log('[AI] Reached max tool depth, forcing final response');
+          console.log('[AI] Reached max tool depth');
+          // Se o usuário pediu relatório, forçar generateReport diretamente
+          const wantsReport =
+            /relat[óo]rio|pdf|csv|txt|exportar|download/i.test(
+              userMessage || '',
+            );
+          if (wantsReport) {
+            try {
+              console.log('[AI] Forcing generateReport at max depth');
+              const forcedFormat =
+                this.detectRequestedFormatFromMessage(userMessage);
+              const forcedResult = await this.executeTool({
+                toolName: 'generateReport',
+                args: { cpf: actor.cpf, format: forcedFormat },
+                toolCallId: 'forced-generateReport-at-maxDepth',
+              });
+              if (forcedResult?.downloadUrl) {
+                finalResponseText = `Pronto! Aqui está seu relatório: ${forcedResult.downloadUrl}`;
+              } else {
+                finalResponseText =
+                  forcedResult?.error ||
+                  'Não consegui gerar o relatório agora. Por favor, tente novamente.';
+              }
+            } catch (e) {
+              console.error(
+                '[AI] Forced generateReport at max depth failed:',
+                e,
+              );
+            }
+          } else {
+            console.log('[AI] Forcing final response without tools');
+          }
           break;
         }
 
@@ -414,6 +445,38 @@ export class GeminiAIService implements AIService {
           for await (const part of finalResult.fullStream) {
             if (part.type === 'text-delta') {
               finalResponseText += part.textDelta;
+            }
+          }
+          // Após obter a resposta final, verificar e forçar generateReport se necessário
+          const hasCode =
+            !!finalResponseText &&
+            (finalResponseText.includes('tool_codeprint') ||
+              /generateReport\s*\(/i.test(finalResponseText) ||
+              /default_api\./i.test(finalResponseText));
+          const wantsReport =
+            /relat[óo]rio|pdf|csv|txt|exportar|download/i.test(
+              userMessage || '',
+            );
+          if (hasCode || wantsReport) {
+            try {
+              console.log('[AI] Forcing generateReport after final call');
+              const forcedFormat =
+                this.detectRequestedFormatFromMessage(userMessage);
+              const forcedResult = await this.executeTool({
+                toolName: 'generateReport',
+                args: { cpf: actor.cpf, format: forcedFormat },
+                toolCallId: 'forced-generateReport-after-final',
+              });
+              if (forcedResult?.downloadUrl) {
+                finalResponseText = `Pronto! Aqui está seu relatório: ${forcedResult.downloadUrl}`;
+              } else if (forcedResult?.error) {
+                finalResponseText = forcedResult.error;
+              }
+            } catch (e) {
+              console.error(
+                '[AI] Forced generateReport after final failed:',
+                e,
+              );
             }
           }
         } catch (error) {
