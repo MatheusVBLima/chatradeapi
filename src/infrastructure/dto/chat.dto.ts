@@ -14,7 +14,6 @@ export class BaseChatRequestDto {
     example: 'Olá! Quais são minhas atividades?',
   })
   @IsString()
-  @IsNotEmpty({ message: 'Message cannot be empty' })
   message: string;
 
   @ApiProperty({
