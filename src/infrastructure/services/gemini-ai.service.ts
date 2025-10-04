@@ -1378,6 +1378,36 @@ export class GeminiAIService implements AIService {
           }
         }
 
+        // Tentativa de reduzir dados ao essencial se usuário pediu campos específicos
+        const normalizedRequest = (lastUserRequest || '').toLowerCase();
+        if (!fieldsRequested && normalizedRequest) {
+          const wantsOnlyEmail =
+            /apenas\s+meu\s+email|s[oó]\s+meu\s+email|somente\s+meu\s+email/.test(
+              normalizedRequest,
+            );
+          const wantsOnlyPreceptorName =
+            /nome\s+da\s+minha?\s+preceptor(a)?|nome\s+do\s+meu\s+preceptor/.test(
+              normalizedRequest,
+            );
+          if (wantsOnlyEmail || wantsOnlyPreceptorName) {
+            const slim: any[] = [];
+            const arr = Array.isArray(dataToReport)
+              ? dataToReport
+              : [dataToReport];
+            for (const item of arr) {
+              if (item.studentName || item.studentEmail) {
+                slim.push({ studentEmail: item.studentEmail });
+              } else if (item.name && item.email) {
+                slim.push({ name: item.name });
+              }
+            }
+            if (slim.length > 0) {
+              dataToReport = slim;
+              title = 'Dados Solicitados';
+            }
+          }
+        }
+
         const cacheId = randomUUID();
         this.cacheService.set(cacheId, { data: dataToReport, title });
         const downloadUrl = `${this.apiBaseUrl}/reports/from-cache/${cacheId}/${format}`;
