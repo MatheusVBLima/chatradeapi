@@ -344,6 +344,14 @@ export class GeminiAIService implements AIService {
           } else {
             // Se não chamou tools, temos a resposta final
             console.log('[AI] No more tool calls, got final response');
+            // Se resposta estiver vazia, usar fallback baseado nas tools executadas
+            if (!finalResponseText || finalResponseText.trim().length === 0) {
+              console.warn('[AI] Empty response from model, using fallback');
+              finalResponseText = this.buildFallbackResponseFromToolResults(
+                toolResults,
+                userMessage,
+              );
+            }
             break;
           }
         } catch (nextCallError: any) {
@@ -687,6 +695,30 @@ export class GeminiAIService implements AIService {
           }
         }
 
+        // Dados do estudante
+        if (tr.toolName === 'getStudentInfo' && tr.result) {
+          const data = tr.result;
+          let response = `Seu nome é ${data.studentName}, seu e-mail é ${data.studentEmail}`;
+          if (data.studentPhone)
+            response += ` e seu telefone é ${data.studentPhone}`;
+          response += `. Você faz parte do grupo ${data.groupNames?.[0] || 'não especificado'}`;
+          if (data.organizationsAndCourses?.[0]) {
+            response += ` e estuda ${data.organizationsAndCourses[0].courseNames?.[0] || ''} na ${data.organizationsAndCourses[0].organizationName}`;
+          }
+          response += '.';
+          return response;
+        }
+
+        // Pessoa encontrada (match exato)
+        if (
+          tr.toolName === 'findPersonByName' &&
+          tr.result &&
+          !tr.result.error
+        ) {
+          const person = tr.result;
+          return `Sim.\n\n📋 Dados de ${person.name}:\n• Email: ${person.email || 'Não disponível'}${person.phone ? `\n• Telefone: ${person.phone}` : ''}`;
+        }
+
         // Pessoa não encontrada ou sugestão de similar
         if (
           tr.toolName === 'findPersonByName' &&
@@ -694,16 +726,16 @@ export class GeminiAIService implements AIService {
           tr.result.error
         ) {
           if (tr.result.suggestion) {
-            // Se tem sugestão, mostrar dados da pessoa similar
+            // Se tem sugestão, mostrar dados da pessoa similar (SEM CPF)
             const person = tr.result.suggestion;
-            return `${tr.result.error}\n\n📋 Dados de ${person.name}:\n• Email: ${person.email || 'Não disponível'}\n• CPF: ${person.cpf}\n• Telefone: ${person.phone || 'Não disponível'}`;
+            return `${tr.result.error}\n\n📋 Dados de ${person.name}:\n• Email: ${person.email || 'Não disponível'}${person.phone ? `\n• Telefone: ${person.phone}` : ''}`;
           }
           return tr.result.error;
         }
       }
 
-      // Para outros casos, forçar segunda chamada da IA que agora tem instruções melhores
-      return '';
+      // Para outros casos, retornar mensagem genérica útil
+      return 'Encontrei os dados solicitados. Como posso ajudá-lo com essas informações?';
     } catch (err) {
       console.error('[AI] Error building fallback response:', err);
       return 'Dados obtidos com sucesso! Tente fazer uma pergunta específica ou solicitar um relatório.';
