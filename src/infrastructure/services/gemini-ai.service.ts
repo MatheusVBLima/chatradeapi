@@ -113,7 +113,7 @@ export class GeminiAIService implements AIService {
     actor: User,
     userMessage: string,
     availableTools: Record<string, CoreTool>,
-    maxToolDepth: number = 2, // Limite de chamadas de tools em sequência
+    maxToolDepth: number = 3, // Limite de chamadas de tools em sequência
   ): Promise<string> {
     const startTime = Date.now();
     console.log('[DEBUG] processToolCall called with:', actor.cpf, userMessage);
@@ -128,6 +128,15 @@ export class GeminiAIService implements AIService {
       ...existingMessages,
       { role: 'user', content: userMessage },
     ];
+
+    // Salvar última solicitação do usuário para heurísticas de relatório
+    try {
+      this.cacheService.set(
+        this.getLastUserRequestCacheKey(actor.cpf),
+        userMessage,
+        3600000,
+      );
+    } catch {}
 
     // Limitar histórico para evitar contexto muito grande (últimas 7 mensagens)
     // Aumentado para manter melhor contexto em conversas longas
@@ -273,6 +282,23 @@ export class GeminiAIService implements AIService {
               console.log('[AI] Forcing generateReport at max depth');
               const forcedFormat =
                 this.detectRequestedFormatFromMessage(userMessage);
+              // Tentar refinar contexto: encontrar nome citado e garantir dados acumulados
+              const maybeName = this.extractRequestedPersonName(userMessage);
+              if (maybeName) {
+                try {
+                  await this.executeTool({
+                    toolName: 'findPersonByName',
+                    args: { cpf: actor.cpf, name: maybeName },
+                  });
+                } catch (e) {
+                  console.warn('[AI] findPersonByName during force failed:', e);
+                }
+              }
+              try {
+                await this.ensureStudentDataAccumulated(actor.cpf);
+              } catch (e) {
+                console.warn('[AI] ensureStudentDataAccumulated failed:', e);
+              }
               const forcedResult = await this.executeTool({
                 toolName: 'generateReport',
                 args: { cpf: actor.cpf, format: forcedFormat },
@@ -413,6 +439,18 @@ export class GeminiAIService implements AIService {
         try {
           const forcedFormat =
             this.detectRequestedFormatFromMessage(userMessage);
+          const maybeName = this.extractRequestedPersonName(userMessage);
+          try {
+            await this.ensureStudentDataAccumulated(actor.cpf);
+          } catch {}
+          if (maybeName) {
+            try {
+              await this.executeTool({
+                toolName: 'findPersonByName',
+                args: { cpf: actor.cpf, name: maybeName },
+              });
+            } catch {}
+          }
           const forcedResult = await this.executeTool({
             toolName: 'generateReport',
             args: { cpf: actor.cpf, format: forcedFormat },
@@ -787,6 +825,10 @@ export class GeminiAIService implements AIService {
     return `accumulatedData_${cpf}`;
   }
 
+  private getLastUserRequestCacheKey(cpf: string): string {
+    return `lastUserRequest_${cpf}`;
+  }
+
   private accumulateData(cpf: string, newData: any, toolName: string): void {
     const cacheKey = this.getAccumulatedDataCacheKey(cpf);
     const existing = this.cacheService.get(cacheKey) || {
@@ -904,6 +946,43 @@ export class GeminiAIService implements AIService {
     if (normalized.includes('txt') || normalized.includes('texto'))
       return 'txt';
     return 'pdf';
+  }
+
+  private extractRequestedPersonName(message: string): string | null {
+    if (!message) return null;
+    // Tenta capturar após "preceptor" ou "preceptora"
+    const preceptorMatch = message.match(
+      /preceptor(?:a)?\s+([\p{L}.'`^~\-\s]{2,})/iu,
+    );
+    if (preceptorMatch && preceptorMatch[1]) {
+      const raw = preceptorMatch[1]
+        .replace(/[\n\r]/g, ' ')
+        .replace(/[^\p{L}\s.'`^~\-]/giu, ' ')
+        .trim();
+      // Limita a até 4 palavras para evitar pegar frase inteira
+      return raw.split(/\s+/).slice(0, 4).join(' ').trim() || null;
+    }
+    // Tenta nomes entre aspas
+    const quoted = message.match(/["“”']([\p{L}\s.'`^~\-]{3,})["“”']/iu);
+    if (quoted && quoted[1]) {
+      return quoted[1].trim();
+    }
+    return null;
+  }
+
+  private async ensureStudentDataAccumulated(cpf: string): Promise<void> {
+    const items = this.getAccumulatedData(cpf);
+    const hasStudent = items.some((i) => {
+      const d = i?.data;
+      return d && typeof d === 'object' && (d.studentName || d.coordinatorName);
+    });
+    if (!hasStudent) {
+      try {
+        await this.executeTool({ toolName: 'getStudentInfo', args: { cpf } });
+      } catch (e) {
+        console.warn('[AI] ensureStudentDataAccumulated failed:', e);
+      }
+    }
   }
 
   // Gerar chave específica do cache para cada tipo de tool
@@ -1185,6 +1264,9 @@ export class GeminiAIService implements AIService {
           this.getLastResultCacheKey(args.cpf),
         );
         const accumulatedData = this.getAccumulatedData(args.cpf);
+        const lastUserRequest = this.cacheService.get(
+          this.getLastUserRequestCacheKey(args.cpf),
+        ) as string | undefined;
 
         if (!lastData && accumulatedData.length === 0) {
           return {
@@ -1205,6 +1287,55 @@ export class GeminiAIService implements AIService {
           dataToUse = this.combineAccumulatedData(accumulatedData);
           // Limpar cache acumulado após uso
           this.clearAccumulatedData(args.cpf);
+        }
+
+        // Heurística: se o usuário mencionou um nome de preceptor, manter apenas estudante + esse preceptor
+        try {
+          const maybeName = this.extractRequestedPersonName(
+            lastUserRequest || '',
+          );
+          if (maybeName) {
+            const nameNorm = maybeName.toLowerCase();
+            const isStudentObject = (obj: any) =>
+              obj &&
+              typeof obj === 'object' &&
+              (obj.studentName || obj.coordinatorName);
+            const isProfessional = (obj: any) =>
+              obj && typeof obj === 'object' && obj.name && obj.email;
+
+            if (Array.isArray(dataToUse)) {
+              const studentObj = dataToUse.find(isStudentObject);
+              const professionalObj = dataToUse.find(
+                (o) =>
+                  isProfessional(o) &&
+                  String(o.name).toLowerCase().includes(nameNorm),
+              );
+              const filtered: any[] = [];
+              if (studentObj) filtered.push(studentObj);
+              if (professionalObj) filtered.push(professionalObj);
+              if (filtered.length > 0) {
+                dataToUse = filtered;
+              }
+            } else if (dataToUse && typeof dataToUse === 'object') {
+              // Se só veio estudante, tentar puxar profissionais do cache e filtrar
+              const professionals = this.cacheService.get(
+                this.getToolCacheKey('getStudentsProfessionals', args.cpf),
+              ) as any[] | undefined;
+              if (professionals && professionals.length > 0) {
+                const professionalObj = professionals.find((p) =>
+                  String(p.name).toLowerCase().includes(nameNorm),
+                );
+                if (professionalObj) {
+                  dataToUse = [dataToUse, professionalObj];
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(
+            '[REPORT] Heuristic filter by requested name failed:',
+            e,
+          );
         }
 
         // Filtrar dados se campos específicos foram solicitados
