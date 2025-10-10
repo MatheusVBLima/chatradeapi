@@ -4,7 +4,7 @@ import { UserRepository } from '../../domain/repositories/user.repository';
 import { AIService } from '../../domain/services/ai.service';
 import { User } from '../../domain/entities/user.entity';
 import { getVirtualAssistanceTools } from './ai-tools';
-import { CoreTool } from 'ai';
+// CoreTool removed in AI SDK v5 - using Record<string, any> for tools
 import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 export interface ProcessOpenChatMessageRequest {
@@ -23,14 +23,15 @@ export interface ProcessOpenChatMessageResponse {
 
 @Injectable()
 export class ProcessOpenChatMessageUseCase {
-
   constructor(
     @Inject('UserRepository') private readonly userRepository: UserRepository,
     @Inject('AIService') private readonly aiService: AIService,
     private readonly configService: ConfigService,
   ) {}
 
-  async execute(request: ProcessOpenChatMessageRequest): Promise<ProcessOpenChatMessageResponse> {
+  async execute(
+    request: ProcessOpenChatMessageRequest,
+  ): Promise<ProcessOpenChatMessageResponse> {
     try {
       let actor: User | null = null;
       if (request.userId) {
@@ -48,37 +49,47 @@ export class ProcessOpenChatMessageUseCase {
 
       if (!actor) {
         return {
-          response: 'Desculpe, não consegui te identificar. Verifique se suas informações de acesso estão corretas.',
+          response:
+            'Desculpe, não consegui te identificar. Verifique se suas informações de acesso estão corretas.',
           success: false,
-          error: 'Actor not found'
+          error: 'Actor not found',
         };
       }
-      
+
       // 2. Select tools based on the actor's role
       const availableTools = this.getToolsForRole(actor.role);
-      
-      // 3. Let the AI service handle the tool-calling logic  
-      console.log('[USE-CASE] About to call processToolCall with tools:', Object.keys(availableTools));
-      const aiResponse = await this.aiService.processToolCall(actor, request.message, availableTools);
+
+      // 3. Let the AI service handle the tool-calling logic
+      console.log(
+        '[USE-CASE] About to call processToolCall with tools:',
+        Object.keys(availableTools),
+      );
+      const aiResult = await this.aiService.processToolCall(
+        actor,
+        request.message,
+        availableTools,
+      );
 
       return {
-        response: aiResponse,
-        success: true
+        response: aiResult.text,
+        success: true,
       };
-
     } catch (error) {
       console.error('Error processing chat message:', error);
       return {
-        response: 'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
+        response:
+          'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
-  private getToolsForRole(role: 'student' | 'coordinator'): Record<string, CoreTool> {
+  private getToolsForRole(
+    role: 'student' | 'coordinator',
+  ): Record<string, any> {
     const tools = getVirtualAssistanceTools(this.configService);
-    
+
     const studentTools = {
       getStudentsScheduledActivities: tools.getStudentsScheduledActivities,
       getStudentsProfessionals: tools.getStudentsProfessionals,
@@ -106,7 +117,7 @@ export class ProcessOpenChatMessageUseCase {
       // Coordinators can also use student tools to look up specific students
       return { ...commonTools, ...studentTools, ...coordinatorTools };
     }
-    
+
     return { ...commonTools, ...studentTools };
   }
-} 
+}

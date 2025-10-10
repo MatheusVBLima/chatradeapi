@@ -45,7 +45,7 @@ export class ProcessTestClosedChatMessageUseCase {
       const { response, nextState } = await this.closedChatFlow.handle(
         request.message,
         request.state ?? null,
-        user ?? undefined,
+        user || undefined,
         true // isTestMode = true para test_closed
       );
 

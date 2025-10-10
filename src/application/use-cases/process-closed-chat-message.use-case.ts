@@ -41,9 +41,9 @@ export class ProcessClosedChatMessageUseCase {
       }
 
       const { response, nextState } = await this.closedChatFlow.handle(
-        request.message, 
-        request.state ?? null, 
-        user ?? undefined
+        request.message,
+        request.state ?? null,
+        user || undefined
       );
 
       return {

@@ -17,7 +17,10 @@
 ## 👨‍🎓 Rotas de Estudante - CPF: 98765432100
 
 ### 1. GET /virtual-assistance/students/98765432100
+
 **Status**: ✅ 200 OK
+
+gere um relatorio pdf com meu email, meu grupo, meu curso e os dados da minha preceptora eugenia
 
 ```json
 {
@@ -37,10 +40,12 @@
 ```
 
 **Observações**:
+
 - Estrutura diferente do mock (studentName vs name, studentEmail vs email)
 - Inclui organizationsAndCourses (não existe no mock)
 
 ### 2. GET /virtual-assistance/students/scheduled-activities/98765432100
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -50,6 +55,7 @@
 **Observação**: Array vazio - estudante não possui atividades agendadas
 
 ### 3. GET /virtual-assistance/students/professionals/98765432100
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -91,6 +97,7 @@
 ## 👨‍🏫 Rotas de Coordenador - CPF: 05631761483
 
 ### 4. GET /virtual-assistance/coordinators/05631761483
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -102,17 +109,30 @@
     "Ciências da Computação - HUY400MA",
     "Engenharia Civil - ZUD918XW",
     "Direito  - BNG808JC",
-    "Arquitetura e Urbanismo - MEC271YM",
+    "Arquitetura e Urbanismo - MEC271YM"
     // ... 55 grupos no total
   ],
   "organizationsAndCourses": [
     {
       "organizationName": "Prefeitura de Caruaru",
       "courseNames": [
-        "Amttc", "Ceaca", "Controladoria", "Procon Caruaru", 
-        "Procuradoria", "Sad", "Sdsdh", "Secop", "Sedetec", 
-        "Seduc", "Sefaz", "Seplag", "Sesp", "Seurb", "Sms",
-        "Spm - Secretaria de Políticas Para Mulheres -", "Urb"
+        "Amttc",
+        "Ceaca",
+        "Controladoria",
+        "Procon Caruaru",
+        "Procuradoria",
+        "Sad",
+        "Sdsdh",
+        "Secop",
+        "Sedetec",
+        "Seduc",
+        "Sefaz",
+        "Seplag",
+        "Sesp",
+        "Seurb",
+        "Sms",
+        "Spm - Secretaria de Políticas Para Mulheres -",
+        "Urb"
       ]
     }
   ]
@@ -122,6 +142,7 @@
 **Observação**: Coordenador com acesso a 59 grupos e múltiplos cursos na Prefeitura de Caruaru
 
 ### 5. GET /virtual-assistance/coordinators/ongoing-activities/05631761483
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -131,6 +152,7 @@
 **Observação**: Array vazio - não há atividades em andamento no momento
 
 ### 6. GET /virtual-assistance/coordinators/professionals/05631761483
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -144,7 +166,7 @@
   },
   {
     "cpf": "02587082471",
-    "name": "Wilsa de Souza Melo", 
+    "name": "Wilsa de Souza Melo",
     "email": "teste@teste",
     "phone": null,
     "groupNames": ["Direito  - BAY989DM"]
@@ -169,16 +191,18 @@
 **Observação**: 4 profissionais sob supervisão do coordenador
 
 ### 7. GET /virtual-assistance/coordinators/students/05631761483
+
 **Status**: ✅ 200 OK
 
 **Resultado**: 134 estudantes encontrados (lista muito extensa)
 
 **Estrutura dos estudantes**:
+
 ```json
 {
   "cpf": "13281598412",
   "name": "Karla Priscila Negromonte de Queiroz",
-  "email": "2018110030@app.asces.edu.br", 
+  "email": "2018110030@app.asces.edu.br",
   "phone": "81997690940",
   "groupNames": ["Engenharia Ambiental  - ZXU765GN"]
 }
@@ -191,7 +215,7 @@
 Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 
 - GET /virtual-assistance/coordinators/98765432100
-- GET /virtual-assistance/coordinators/ongoing-activities/98765432100  
+- GET /virtual-assistance/coordinators/ongoing-activities/98765432100
 - GET /virtual-assistance/coordinators/professionals/98765432100
 - GET /virtual-assistance/coordinators/students/98765432100
 
@@ -206,10 +230,11 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### Estrutura de Dados de Estudante
 
 **Mock**:
+
 ```json
 {
   "cpf": "98765432100",
-  "name": "Dr. João Carlos Oliveira", 
+  "name": "Dr. João Carlos Oliveira",
   "email": "joao.oliveira@preceptores.ufpr.br",
   "phone": "41999887766",
   "groupNames": ["Grupo 1 - Saúde da Mulher", "Grupo 4 - Saúde Mental"]
@@ -217,19 +242,21 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ```
 
 **Staging**:
+
 ```json
 {
   "studentName": "Joaquim José da Silva Xavier",
   "studentEmail": "r.olisantos@gmail.com",
-  "studentPhone": "11999999999", 
+  "studentPhone": "11999999999",
   "groupNames": ["GST1692 - ESTÁGIO SUPERVISIONADO EM ADMINISTRAÇÃO - NHE715YG"],
   "organizationsAndCourses": [...]
 }
 ```
 
 **Principais diferenças**:
+
 - `name` → `studentName`
-- `email` → `studentEmail` 
+- `email` → `studentEmail`
 - `phone` → `studentPhone`
 - Adicionado: `organizationsAndCourses`
 - Nomes dos grupos são diferentes (códigos vs nomes descritivos)
@@ -238,10 +265,11 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### Estrutura de Profissionais
 
 **Mock vs Staging**: ✅ **Estrutura idêntica**
+
 ```json
 {
   "cpf": "string",
-  "name": "string", 
+  "name": "string",
   "email": "string",
   "phone": "string|null",
   "groupNames": ["string"]
@@ -251,10 +279,11 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### Dados de Coordenador
 
 **Mock**:
+
 ```json
 {
   "coordinatorName": "Prof. Daniela Moura",
-  "coordinatorEmail": "daniela.moura@ufpr.br", 
+  "coordinatorEmail": "daniela.moura@ufpr.br",
   "coordinatorPhone": "41991112233",
   "groupNames": ["Grupo 1", "Grupo 2", "Grupo 4"],
   "organizationsAndCourses": [...]
@@ -289,6 +318,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### CPF: 13281598412 - Karla Priscila Negromonte de Queiroz
 
 #### GET /virtual-assistance/students/13281598412
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -311,13 +341,17 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ```
 
 #### GET /virtual-assistance/students/scheduled-activities/13281598412
+
 **Status**: ✅ 200 OK
+
 ```json
 []
 ```
 
 #### GET /virtual-assistance/students/professionals/13281598412
+
 **Status**: ✅ 200 OK
+
 ```json
 []
 ```
@@ -325,6 +359,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### CPF: 12381436448 - Josefa Andreza Alves da Silva
 
 #### GET /virtual-assistance/students/12381436448
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -351,6 +386,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### CPF: 70436988470 - Helaysa Samara Louise Silva
 
 #### GET /virtual-assistance/students/70436988470
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -373,6 +409,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ### CPF: 11536655490 - Bruno Washington Santos Silva
 
 #### GET /virtual-assistance/students/11536655490
+
 **Status**: ✅ 200 OK
 
 ```json
@@ -397,6 +434,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ## 🔍 Busca por Coordenadores Adicionais
 
 **Tentativa de encontrar outros coordenadores**:
+
 - Testamos vários CPFs de profissionais e estudantes
 - Todos retornaram `{"statusCode":404,"message":"Coordenador não encontrado"}`
 - **Conclusão**: Apenas o CPF `05631761483` tem perfil de coordenador no sistema staging
@@ -406,22 +444,26 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 ## 📊 Padrões Identificados nos Dados Staging
 
 ### 1. **Estrutura Consistente de Estudantes**
+
 - Todos seguem o padrão: `studentName`, `studentEmail`, `studentPhone`
 - `organizationsAndCourses` sempre presente
 - Duas organizações comuns:
-  - "Prefeitura de Caruaru" 
+  - "Prefeitura de Caruaru"
   - "Centro Universitário Tabosa de Almeida ASCES-UNITA"
 
 ### 2. **Arrays Vazios são Comuns**
+
 - `scheduled-activities`: Todos os estudantes testados retornaram `[]`
 - `professionals`: Maioria retorna `[]` (apenas o primeiro estudante teve 3 profissionais)
 - `ongoing-activities` (coordenador): Retorna `[]`
 
 ### 3. **Grupos com Códigos Únicos**
+
 - Padrão: "Curso - CÓDIGO8CHAR"
-- Exemplos: "GST1692 - ...", "Engenharia Ambiental  - ZXU765GN"
+- Exemplos: "GST1692 - ...", "Engenharia Ambiental - ZXU765GN"
 
 ### 4. **Diferentes Cursos Representados**
+
 - **Administração**: Wyden Unifavip
 - **Engenharia Ambiental**: ASCES-UNITA + Prefeitura Caruaru
 - **Arquitetura e Urbanismo**: Prefeitura Caruaru
@@ -434,7 +476,7 @@ Testamos o CPF `98765432100` (estudante) nas rotas de coordenador:
 
 2. **Dados Reais**: Sistema contém dados reais de estudantes e profissionais ativos
 
-3. **Perfis Bem Definidos**: 
+3. **Perfis Bem Definidos**:
    - 1 Coordenador com acesso amplo (134 estudantes, 4 profissionais)
    - Múltiplos estudantes com dados básicos
    - Arrays vazios para atividades (possivelmente período sem atividades)

@@ -113,49 +113,46 @@ export class ReportService {
       }
       // Dados de estudante individual (formato API staging)
       else if (item.studentName || item.studentEmail) {
-        formatted += `${item.studentName || 'Estudante'}\n`;
         if (item.studentEmail)
-          formatted += `${indent}Email: ${item.studentEmail}\n`;
+          formatted += `Email: ${item.studentEmail}\n`;
         if (item.studentPhone)
-          formatted += `${indent}Telefone: ${item.studentPhone}\n`;
+          formatted += `Telefone: ${item.studentPhone}\n`;
         if (item.groupNames)
-          formatted += `${indent}Grupos: ${Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames}\n`;
+          formatted += `Grupos: ${Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames}\n`;
         if (item.organizationsAndCourses) {
           const orgs = Array.isArray(item.organizationsAndCourses)
             ? item.organizationsAndCourses
             : [item.organizationsAndCourses];
           orgs.forEach((org) => {
             if (org.organizationName)
-              formatted += `${indent}Instituição: ${org.organizationName}\n`;
+              formatted += `Instituição: ${org.organizationName}\n`;
             if (org.courseNames)
-              formatted += `${indent}Cursos: ${Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames}\n`;
+              formatted += `Cursos: ${Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames}\n`;
           });
         }
       }
       // Dados de coordenador individual
       else if (item.coordinatorName || item.coordinatorEmail) {
-        formatted += `${item.coordinatorName || 'Coordenador'}\n`;
         if (item.coordinatorEmail)
-          formatted += `${indent}Email: ${item.coordinatorEmail}\n`;
+          formatted += `Email: ${item.coordinatorEmail}\n`;
         if (item.coordinatorPhone)
-          formatted += `${indent}Telefone: ${item.coordinatorPhone}\n`;
+          formatted += `Telefone: ${item.coordinatorPhone}\n`;
         if (item.groupNames)
-          formatted += `${indent}Grupos: ${Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames}\n`;
+          formatted += `Grupos: ${Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames}\n`;
         if (item.organizationsAndCourses) {
           const orgs = Array.isArray(item.organizationsAndCourses)
             ? item.organizationsAndCourses
             : [item.organizationsAndCourses];
           orgs.forEach((org) => {
             if (org.organizationName)
-              formatted += `${indent}Instituição: ${org.organizationName}\n`;
+              formatted += `Instituição: ${org.organizationName}\n`;
             if (org.courseNames)
-              formatted += `${indent}Cursos: ${Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames}\n`;
+              formatted += `Cursos: ${Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames}\n`;
           });
         }
       }
       // Dados genéricos (fallback)
       else {
-        formatted += `Registro ${index + 1}\n`;
         Object.entries(item).forEach(([key, value]) => {
           // Melhorar a apresentação das chaves
           let friendlyKey = key;
@@ -196,7 +193,12 @@ export class ReportService {
         });
       }
 
-      formatted += '\n';
+      // Adicionar separador visual entre registros (exceto último)
+      if (index < dataArray.length - 1) {
+        formatted += '\n---\n\n';
+      } else {
+        formatted += '\n';
+      }
     });
 
     // Não adiciona rodapé no PDF

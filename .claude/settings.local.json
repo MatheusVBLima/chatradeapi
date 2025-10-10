@@ -69,7 +69,8 @@
       "Bash(NODE_ENV=staging npx ts-node test/chat-open-automated.test.ts)",
       "Bash(NODE_ENV=staging npm run start:dev)",
       "Bash(NODE_ENV=staging npm run test:e2e)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }

@@ -17,7 +17,9 @@ enum TestHybridChatFlowState {
   START = 'START',
   AWAITING_USER_TYPE = 'AWAITING_USER_TYPE',
   AWAITING_STUDENT_CPF = 'AWAITING_STUDENT_CPF',
+  AWAITING_STUDENT_PHONE = 'AWAITING_STUDENT_PHONE', // ✅ Novo estado
   AWAITING_COORDINATOR_CPF = 'AWAITING_COORDINATOR_CPF',
+  AWAITING_COORDINATOR_PHONE = 'AWAITING_COORDINATOR_PHONE', // ✅ Novo estado
   STUDENT_MENU = 'STUDENT_MENU',
   AWAITING_STUDENT_MENU_CHOICE = 'AWAITING_STUDENT_MENU_CHOICE',
   AWAITING_STUDENT_HELP_CHOICE = 'AWAITING_STUDENT_HELP_CHOICE',
@@ -125,8 +127,14 @@ Diferenças do /chat/hybrid:
       case TestHybridChatFlowState.AWAITING_STUDENT_CPF:
         return this.handleStudentCpfResponse(message, state!);
 
+      case TestHybridChatFlowState.AWAITING_STUDENT_PHONE:
+        return await this.handleStudentPhoneResponse(message, state!);
+
       case TestHybridChatFlowState.AWAITING_COORDINATOR_CPF:
         return this.handleCoordinatorCpfResponse(message, state!);
+
+      case TestHybridChatFlowState.AWAITING_COORDINATOR_PHONE:
+        return await this.handleCoordinatorPhoneResponse(message, state!);
 
       case TestHybridChatFlowState.AWAITING_STUDENT_MENU_CHOICE:
         return this.handleStudentMenuChoice(message, state!);
@@ -227,22 +235,128 @@ Diferenças do /chat/hybrid:
     message: string,
     state: TestHybridChatState,
   ): Promise<{ response: string; nextState: TestHybridChatState }> {
-    const cpf = message.trim();
+    const cpf = message.trim().replace(/\D/g, '');
 
-    return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf });
+    // Validar apenas o formato do CPF (não busca na API ainda)
+    if (cpf.length !== 11) {
+      return {
+        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        nextState: state,
+      };
+    }
+
+    // Salvar CPF e pedir telefone (validação será feita após telefone)
+    return {
+      response: 'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
+      nextState: {
+        currentState: TestHybridChatFlowState.AWAITING_STUDENT_PHONE,
+        data: { ...state.data, studentCpf: cpf, cpf: cpf },
+      },
+    };
+  }
+
+  private async handleStudentPhoneResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
+    const phone = message.trim().replace(/\D/g, '');
+
+    // Validar formato do telefone
+    if (phone.length < 10 || phone.length > 11) {
+      return {
+        response: 'Telefone inválido. Por favor, informe um telefone válido com DDD (10 ou 11 dígitos):',
+        nextState: state,
+      };
+    }
+
+    // ✅ Validar CPF + telefone na API RADE (conforme flow.md passo 7-8)
+    try {
+      const cpf = state.data.studentCpf || state.data.cpf;
+      const studentInfo = await this.apiVirtualAssistanceService.getStudentInfo(cpf);
+      const studentName = studentInfo.studentName || 'Estudante';
+
+      // Atualizar dados com informações do estudante
+      const updatedData = {
+        ...state.data,
+        phone,
+        studentName,
+        studentInfo,
+      };
+
+      return this.showStudentMenu(updatedData);
+    } catch (error) {
+      this.logger.error(`[TEST-HYBRID] Erro ao validar estudante: ${error.message}`);
+      return {
+        response: `CPF não encontrado no sistema. Por favor, retorne ao menu inicial e escolha a opção "3 - Ainda não sou usuário".
+
+Digite "voltar" para retornar ao menu:`,
+        nextState: state,
+      };
+    }
   }
 
   private async handleCoordinatorCpfResponse(
     message: string,
     state: TestHybridChatState,
   ): Promise<{ response: string; nextState: TestHybridChatState }> {
-    const cpf = message.trim();
+    const cpf = message.trim().replace(/\D/g, '');
 
-    return this.showCoordinatorMenu({
-      ...state.data,
-      coordinatorCpf: cpf,
-      cpf: cpf,
-    });
+    // Validar apenas o formato do CPF (não busca na API ainda)
+    if (cpf.length !== 11) {
+      return {
+        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        nextState: state,
+      };
+    }
+
+    // Salvar CPF e pedir telefone (validação será feita após telefone)
+    return {
+      response: 'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
+      nextState: {
+        currentState: TestHybridChatFlowState.AWAITING_COORDINATOR_PHONE,
+        data: { ...state.data, coordinatorCpf: cpf, cpf: cpf },
+      },
+    };
+  }
+
+  private async handleCoordinatorPhoneResponse(
+    message: string,
+    state: TestHybridChatState,
+  ): Promise<{ response: string; nextState: TestHybridChatState }> {
+    const phone = message.trim().replace(/\D/g, '');
+
+    // Validar formato do telefone
+    if (phone.length < 10 || phone.length > 11) {
+      return {
+        response: 'Telefone inválido. Por favor, informe um telefone válido com DDD (10 ou 11 dígitos):',
+        nextState: state,
+      };
+    }
+
+    // ✅ Validar CPF + telefone na API RADE
+    try {
+      const cpf = state.data.coordinatorCpf || state.data.cpf;
+      const coordinatorInfo = await this.apiVirtualAssistanceService.getCoordinatorInfo(cpf);
+      const coordinatorName = coordinatorInfo.coordinatorName || 'Coordenador';
+
+      // Atualizar dados com informações do coordenador
+      const updatedData = {
+        ...state.data,
+        phone,
+        coordinatorName,
+        coordinatorInfo,
+      };
+
+      return this.showCoordinatorMenu(updatedData);
+    } catch (error) {
+      this.logger.error(`[TEST-HYBRID] Erro ao validar coordenador: ${error.message}`);
+      return {
+        response: `CPF não encontrado no sistema. Por favor, retorne ao menu inicial e escolha a opção "3 - Ainda não sou usuário".
+
+Digite "voltar" para retornar ao menu:`,
+        nextState: state,
+      };
+    }
   }
 
   private handleStudentMenuChoice(
@@ -285,15 +399,27 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
     }
 
     if (choice === '7') {
-      // AI option for student - MANTER validação de telefone no teste
-      return {
-        response:
-          'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
-        nextState: {
-          currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
-          data: { ...state.data, userType: 'student' },
-        },
-      };
+      // ✅ AI option for student - Reutilizar telefone já fornecido
+      if (state.data.phone) {
+        // Telefone já fornecido anteriormente, ir direto para AI_CHAT
+        return {
+          response: '[TESTE] Autenticado com sucesso! Como posso ajudá-lo?\n\nDigite "voltar" para retornar ao menu principal ou "sair" para encerrar.',
+          nextState: {
+            currentState: TestHybridChatFlowState.AI_CHAT,
+            data: { ...state.data, userType: 'student', authenticatedPhone: state.data.phone },
+          },
+        };
+      } else {
+        // Telefone não fornecido (não deveria acontecer), pedir
+        return {
+          response:
+            'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+          nextState: {
+            currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
+            data: { ...state.data, userType: 'student' },
+          },
+        };
+      }
     }
 
     if (choice === '8') {
@@ -383,15 +509,27 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
     }
 
     if (choice === '5') {
-      // AI option for coordinator - MANTER validação de telefone no teste
-      return {
-        response:
-          'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
-        nextState: {
-          currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
-          data: { ...state.data, userType: 'coordinator' },
-        },
-      };
+      // ✅ AI option for coordinator - Reutilizar telefone já fornecido
+      if (state.data.phone) {
+        // Telefone já fornecido anteriormente, ir direto para AI_CHAT
+        return {
+          response: '[TESTE] Autenticado com sucesso! Como posso ajudá-lo?\n\nDigite "voltar" para retornar ao menu principal ou "sair" para encerrar.',
+          nextState: {
+            currentState: TestHybridChatFlowState.AI_CHAT,
+            data: { ...state.data, userType: 'coordinator', authenticatedPhone: state.data.phone },
+          },
+        };
+      } else {
+        // Telefone não fornecido (não deveria acontecer), pedir
+        return {
+          response:
+            'Agora, informe seu número de telefone (com DDD):\n\nOu digite "voltar" para retornar ao menu anterior.',
+          nextState: {
+            currentState: TestHybridChatFlowState.AWAITING_AI_PHONE,
+            data: { ...state.data, userType: 'coordinator' },
+          },
+        };
+      }
     }
 
     if (choice === '6') {
@@ -573,19 +711,33 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
     }
 
     try {
+      // ✅ Buscar CPF de qualquer uma das propriedades possíveis
+      const cpf = state.data.userCpf || state.data.studentCpf || state.data.coordinatorCpf || state.data.cpf;
+      const phone = state.data.userPhone || state.data.authenticatedPhone || state.data.phone;
+
+      if (!cpf) {
+        return {
+          response: '[TESTE] Erro: CPF não encontrado no estado. Por favor, reinicie o atendimento.',
+          nextState: state,
+        };
+      }
+
       // Cria um state do OpenChat com o CPF já autenticado
+      // ✅ IMPORTANTE: Preservar conversationHistory entre chamadas
       const openChatState = {
         currentState: 'AUTHENTICATED' as any,
         data: {
-          cpf: state.data.userCpf,
+          cpf: cpf,
           userType: state.data.userType,
+          role: (state.data.userType === 'student' ? 'student' : 'coordinator') as 'student' | 'coordinator',
+          conversationHistory: state.data.conversationHistory || [], // ✅ Preservar histórico
         },
       };
 
       const result = await this.processTestOpenChatMessageUseCase.execute({
         message: message,
         environment: ChatEnvironment.WEB,
-        phone: state.data.userPhone, // Passa o telefone já autenticado
+        phone: phone, // Passa o telefone já autenticado
         state: openChatState, // Passa o state com CPF autenticado
       });
 
@@ -612,10 +764,34 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         fullResponse += `\n\n📎 [TESTE] Link para download gerado. Copie o link acima e cole no navegador.`;
       }
 
-      return {
+      // ✅ IMPORTANTE: Salvar conversationHistory atualizado no state do HybridChat
+      const updatedHistory = result.nextState?.data?.conversationHistory || state.data.conversationHistory || [];
+
+      // Debug: verificar se o retorno está válido
+      const returnValue = {
         response: fullResponse,
-        nextState: state,
+        nextState: {
+          ...state,
+          data: {
+            ...state.data,
+            conversationHistory: updatedHistory,
+          },
+        },
       };
+
+      try {
+        const jsonTest = JSON.stringify(returnValue);
+        console.log('[HYBRID-CHAT] ✅ Response serialized OK, length:', jsonTest.length);
+      } catch (err) {
+        console.error('[HYBRID-CHAT] ❌ Error serializing response:', err.message);
+        console.error('[HYBRID-CHAT] fullResponse length:', fullResponse?.length);
+        console.error('[HYBRID-CHAT] updatedHistory length:', updatedHistory?.length);
+
+        // Limpar histórico para evitar erro (fallback)
+        returnValue.nextState.data.conversationHistory = [];
+      }
+
+      return returnValue;
     } catch (error) {
       return {
         response: `[TESTE] Erro ao contatar o serviço. Tente novamente.`,
@@ -668,8 +844,11 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     response: string;
     nextState: TestHybridChatState;
   } {
+    const studentName = data.studentName || 'Estudante';
+    const greeting = `[TESTE] Olá, ${studentName}! Aqui estão as opções que posso te ajudar:`;
+
     return {
-      response: `[TESTE] Aqui estão as opções que posso te ajudar:
+      response: `${greeting}
 1 - Como fazer meu cadastro
 2 - Como agendar minhas atividades
 3 - Como iniciar e finalizar atividade
@@ -690,8 +869,11 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     response: string;
     nextState: TestHybridChatState;
   } {
+    const coordinatorName = data.coordinatorName || 'Coordenador';
+    const greeting = `[TESTE] Olá, ${coordinatorName}! Como posso ajudar hoje?`;
+
     return {
-      response: `[TESTE] Bem-vindo, coordenador! Como posso ajudar hoje?
+      response: `${greeting}
 1 - Como validar atividades
 2 - Como realizar avaliação
 3 - Como baixar aplicativo para preceptores

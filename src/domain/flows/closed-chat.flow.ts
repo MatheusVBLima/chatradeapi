@@ -195,20 +195,110 @@ export class ClosedChatFlow {
     message: string,
     state: ClosedChatState,
   ): Promise<FlowResponse> {
-    const cpf = message.trim();
-    return this.showStudentMenu({ ...state.data, studentCpf: cpf, cpf: cpf });
+    const cpf = message.trim().replace(/\D/g, '');
+
+    // Validar formato do CPF
+    if (cpf.length !== 11) {
+      return {
+        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        nextState: state,
+      };
+    }
+
+    // Buscar dados do estudante na API
+    try {
+      const studentInfo = await this.virtualAssistanceService.getStudentInfo(cpf);
+      const studentName = studentInfo.studentName || 'Estudante';
+
+      // Em modo teste/simulação, pedir telefone
+      if (this.currentSimulationMode) {
+        return {
+          response: `Olá, ${studentName}! Para continuar, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):`,
+          nextState: {
+            currentState: ChatFlowState.AWAITING_SIMULATION_PHONE,
+            data: {
+              ...state.data,
+              studentCpf: cpf,
+              cpf: cpf,
+              studentName,
+              studentInfo,
+            },
+          },
+        };
+      }
+
+      // Em produção, ir direto para o menu
+      return this.showStudentMenu({
+        ...state.data,
+        studentCpf: cpf,
+        cpf: cpf,
+        studentName,
+        studentInfo,
+      });
+    } catch (error) {
+      console.error('[CLOSED-CHAT] Erro ao buscar estudante:', error);
+      return {
+        response: `CPF não encontrado no sistema. Por favor, verifique o CPF informado ou escolha a opção "3 - Ainda não sou usuário" no menu inicial.
+
+Digite seu CPF novamente ou digite "voltar" para retornar ao menu:`,
+        nextState: state,
+      };
+    }
   }
 
   private async handleCoordinatorCpfResponse(
     message: string,
     state: ClosedChatState,
   ): Promise<FlowResponse> {
-    const cpf = message.trim();
-    return this.showCoordinatorMenu({
-      ...state.data,
-      coordinatorCpf: cpf,
-      cpf: cpf,
-    });
+    const cpf = message.trim().replace(/\D/g, '');
+
+    // Validar formato do CPF
+    if (cpf.length !== 11) {
+      return {
+        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        nextState: state,
+      };
+    }
+
+    // Buscar dados do coordenador na API
+    try {
+      const coordinatorInfo = await this.virtualAssistanceService.getCoordinatorInfo(cpf);
+      const coordinatorName = coordinatorInfo.coordinatorName || 'Coordenador';
+
+      // Em modo teste/simulação, pedir telefone
+      if (this.currentSimulationMode) {
+        return {
+          response: `Olá, ${coordinatorName}! Para continuar, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):`,
+          nextState: {
+            currentState: ChatFlowState.AWAITING_SIMULATION_PHONE,
+            data: {
+              ...state.data,
+              coordinatorCpf: cpf,
+              cpf: cpf,
+              coordinatorName,
+              coordinatorInfo,
+            },
+          },
+        };
+      }
+
+      // Em produção, ir direto para o menu
+      return this.showCoordinatorMenu({
+        ...state.data,
+        coordinatorCpf: cpf,
+        cpf: cpf,
+        coordinatorName,
+        coordinatorInfo,
+      });
+    } catch (error) {
+      console.error('[CLOSED-CHAT] Erro ao buscar coordenador:', error);
+      return {
+        response: `CPF não encontrado no sistema. Por favor, verifique o CPF informado ou escolha a opção "3 - Ainda não sou usuário" no menu inicial.
+
+Digite seu CPF novamente ou digite "voltar" para retornar ao menu:`,
+        nextState: state,
+      };
+    }
   }
 
   private handleStudentMenuChoice(
@@ -471,7 +561,23 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
       };
     }
 
-    return await this.processarTransferencia(telefone, state.data);
+    // Verificar se vem de transferência ou de autenticação inicial
+    if (state.data.transferReason) {
+      // Se tem transferReason, é uma transferência para atendente
+      return await this.processarTransferencia(telefone, state.data);
+    }
+
+    // Caso contrário, é autenticação inicial - ir para o menu apropriado
+    const updatedData = { ...state.data, userPhone: telefone };
+
+    if (state.data.studentCpf) {
+      return this.showStudentMenu(updatedData);
+    } else if (state.data.coordinatorCpf) {
+      return this.showCoordinatorMenu(updatedData);
+    }
+
+    // Fallback - retornar ao início se não conseguir determinar o tipo
+    return this.handleStart();
   }
 
   /**

@@ -4,7 +4,7 @@ import { VirtualAssistanceService } from '../services/virtual-assistance.service
 import { AIService } from '../services/ai.service';
 import { ConfigService } from '@nestjs/config';
 import { getVirtualAssistanceTools } from '../../application/use-cases/ai-tools';
-import { CoreTool } from 'ai';
+// CoreTool removed in AI SDK v5 - using Record<string, any> for tools
 
 export enum OpenChatFlowState {
   START = 'START',
@@ -228,27 +228,29 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
       // Obter tools baseado no role
       const availableTools = this.getToolsForRole(stateData.role);
 
-      // Processar mensagem com IA
-      const aiResponse = await this.aiService.processToolCall(
+      // Obter histórico de conversação
+      const conversationHistory = stateData.conversationHistory || [];
+
+      // Processar mensagem com IA (passando histórico)
+      const aiResult = await this.aiService.processToolCall(
         user,
         message,
         availableTools,
+        3, // maxToolDepth
+        conversationHistory, // histórico de conversação
       );
 
-      // Adicionar ao histórico
-      const conversationHistory = stateData.conversationHistory || [];
-      conversationHistory.push(
-        { role: 'user', content: message },
-        { role: 'assistant', content: aiResponse },
-      );
+      // ✅ CRÍTICO: Usar as mensagens completas retornadas (incluem tool results)
+      // Não apenas user + assistant text, mas TODAS as mensagens (tool calls + results)
+      const updatedHistory = aiResult.messages;
 
       return {
-        response: aiResponse,
+        response: aiResult.text,
         nextState: {
           currentState: OpenChatFlowState.AUTHENTICATED,
           data: {
             ...stateData,
-            conversationHistory,
+            conversationHistory: updatedHistory, // ✅ Histórico completo com tool results
           },
         },
       };
@@ -267,7 +269,7 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
 
   private getToolsForRole(
     role: 'student' | 'coordinator',
-  ): Record<string, CoreTool> {
+  ): Record<string, any> {
     const tools = getVirtualAssistanceTools(this.configService);
 
     const studentTools = {

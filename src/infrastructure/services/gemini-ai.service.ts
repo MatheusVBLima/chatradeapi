@@ -1,13 +1,8 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from '@ai-sdk/google';
-import {
-  streamText,
-  type CoreTool,
-  type LanguageModel,
-  type CoreMessage,
-  type ToolCallPart,
-} from 'ai';
+import { streamText, type CoreMessage, type ToolCallPart } from 'ai';
+import type { LanguageModelV2 } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { User } from '../../domain/entities/user.entity';
 import { AIService } from '../../domain/services/ai.service';
@@ -22,8 +17,8 @@ import {
 
 @Injectable()
 export class GeminiAIService implements AIService {
-  private readonly primaryModel: LanguageModel;
-  private readonly fallbackModel: LanguageModel;
+  private readonly primaryModel: LanguageModelV2;
+  private readonly fallbackModel: LanguageModelV2;
   private readonly apiBaseUrl: string;
 
   constructor(
@@ -38,7 +33,7 @@ export class GeminiAIService implements AIService {
       'GOOGLE_GENERATIVE_AI_API_KEY',
     );
     this.primaryModel = google('gemini-2.5-flash-lite');
-    this.fallbackModel = google('gemini-2.0-flash-lite');
+    this.fallbackModel = google('gemini-2.0-flash'); // 2.0 não tem versão -lite na docs oficial
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl =
@@ -57,7 +52,7 @@ export class GeminiAIService implements AIService {
   private async callStreamTextWithFallback(params: {
     system: string;
     messages: CoreMessage[];
-    tools?: Record<string, CoreTool>;
+    tools?: Record<string, any>;
   }): Promise<any> {
     const { system, messages, tools } = params;
 
@@ -65,11 +60,12 @@ export class GeminiAIService implements AIService {
     try {
       console.log('[AI] Attempting with primary model (gemini-2.5-flash-lite)');
       return await streamText({
-        model: this.primaryModel,
+        model: this.primaryModel as any,
         system,
         messages,
         tools,
         maxRetries: 0, // Desabilitar retry automático do AI SDK
+        experimental_telemetry: { isEnabled: false },
       });
     } catch (error: any) {
       console.log('[AI] Primary model failed, analyzing error...', error?.name);
@@ -92,11 +88,12 @@ export class GeminiAIService implements AIService {
         );
         try {
           return await streamText({
-            model: this.fallbackModel,
+            model: this.fallbackModel as any,
             system,
             messages,
             tools,
             maxRetries: 2, // No fallback, permitir 2 retries
+            experimental_telemetry: { isEnabled: false },
           });
         } catch (fallbackError) {
           console.error('[AI] Both models failed:', fallbackError);
@@ -109,38 +106,108 @@ export class GeminiAIService implements AIService {
     }
   }
 
+  // ✅ NOVO: Adiciona execute functions dinamicamente nas tools
+  // Isso permite que o AI SDK execute as tools automaticamente com maxSteps
+  private addExecuteFunctionsToTools(
+    tools: Record<string, any>,
+    cpf: string,
+  ): Record<string, any> {
+    const { tool } = require('ai');
+    const toolsWithExecute: Record<string, any> = {};
+
+    for (const [toolName, toolDef] of Object.entries(tools)) {
+      // Criar nova tool com execute function
+      toolsWithExecute[toolName] = tool({
+        description: (toolDef as any).description,
+        parameters: (toolDef as any).parameters,
+        execute: async (args: any) => {
+          // ✅ Injetar CPF automaticamente se não estiver presente
+          const argsWithCpf = { ...args };
+          if (!argsWithCpf.cpf) {
+            argsWithCpf.cpf = cpf;
+          }
+
+          console.log(
+            `[AI-SDK5] Auto-executing tool: ${toolName}`,
+            argsWithCpf,
+          );
+
+          // Executar a tool usando a lógica existente do executeTool
+          return await this.executeTool({
+            toolName,
+            args: argsWithCpf,
+            toolCallId: `auto-${Date.now()}`,
+          });
+        },
+      });
+    }
+
+    return toolsWithExecute;
+  }
+
   async processToolCall(
     actor: User,
     userMessage: string,
-    availableTools: Record<string, CoreTool>,
-    maxToolDepth: number = 3, // Limite de chamadas de tools em sequência
-  ): Promise<string> {
+    availableTools: Record<string, any>,
+    maxToolDepth: number = 3,
+    conversationHistory: Array<{ role: string; content: any }> = [],
+  ): Promise<{
+    text: string;
+    messages: Array<{ role: string; content: any }>;
+  }> {
     const startTime = Date.now();
-    console.log('[DEBUG] processToolCall called with:', actor.cpf, userMessage);
+    console.log(
+      '[AI-SDK5] processToolCall called with:',
+      actor.cpf,
+      userMessage,
+    );
 
-    // Buscar histórico de conversa do cache
+    // 1. Usar histórico passado ou buscar do cache como fallback
     const conversationKey = `conversation_${actor.cpf}`;
-    const existingMessages: CoreMessage[] =
-      this.cacheService.get(conversationKey) || [];
+    let existingMessages: CoreMessage[] = [];
 
-    // Adicionar nova mensagem do usuário
+    if (conversationHistory && conversationHistory.length > 0) {
+      // Converter histórico do flow para formato CoreMessage
+      existingMessages = conversationHistory.map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      }));
+      console.log(
+        '[AI-SDK5] Using conversation history from flow:',
+        existingMessages.length,
+        'messages',
+      );
+    } else {
+      // Fallback: buscar do cache
+      existingMessages = this.cacheService.get(conversationKey) || [];
+      console.log(
+        '[AI-SDK5] Using conversation history from cache:',
+        existingMessages.length,
+        'messages',
+      );
+    }
+
+    // 2. Adicionar nova mensagem do usuário
     const messages: CoreMessage[] = [
       ...existingMessages,
       { role: 'user', content: userMessage },
     ];
 
-    // Salvar última solicitação do usuário para heurísticas de relatório
-    try {
-      this.cacheService.set(
-        this.getLastUserRequestCacheKey(actor.cpf),
-        userMessage,
-        3600000,
-      );
-    } catch {}
+    // 3. Limitar histórico (últimas mensagens) - com preservação inteligente
+    // IMPORTANTE: Não podemos cortar muito senão quebramos a sequência válida do Gemini
+    const trimmedMessages = this.smartTrimMessages(messages, 20);
 
-    // Limitar histórico para evitar contexto muito grande (últimas 7 mensagens)
-    // Aumentado para manter melhor contexto em conversas longas
-    const trimmedMessages = messages.slice(-7);
+    // Debug: Ver estrutura das mensagens
+    console.log(
+      '[AI-SDK5] Trimmed messages preview:',
+      JSON.stringify(trimmedMessages.slice(-2), null, 2).substring(0, 500),
+    );
+
+    // 4. ✅ NOVO: Adicionar execute functions nas tools
+    const toolsWithExecute = this.addExecuteFunctionsToTools(
+      availableTools,
+      actor.cpf,
+    );
 
     // Métricas de tokens
     const systemPrompt = this.promptService.getSystemPrompt(actor);
@@ -154,19 +221,42 @@ export class GeminiAIService implements AIService {
     console.log('[METRICS] Estimated input tokens:', estimatedInputTokens);
     console.log(
       '[METRICS] Available tools:',
-      Object.keys(availableTools).length,
+      Object.keys(toolsWithExecute).length,
     );
     console.log('[METRICS] Message history length:', trimmedMessages.length);
 
     let result;
     let usedFallback = false;
 
-    // Tentar com modelo primário primeiro
+    // 5. ✅ Usando maxSteps para permitir tool execution + text generation
     try {
-      result = await this.callStreamTextWithFallback({
-        system: this.promptService.getSystemPrompt(actor),
+      console.log(
+        `[AI-SDK5] Calling streamText (v5 auto-handles tool execution)`,
+      );
+      result = await streamText({
+        model: this.primaryModel as any,
+        system: systemPrompt,
         messages: trimmedMessages,
-        tools: availableTools,
+        tools: toolsWithExecute, // ✅ Tools com execute functions
+        temperature: 0,
+        maxRetries: 0,
+        experimental_telemetry: { isEnabled: false },
+        onStepFinish: ({
+          text,
+          toolCalls,
+          toolResults,
+          finishReason,
+          usage,
+        }) => {
+          console.log('[AI-SDK5] onStepFinish:', {
+            textLength: text?.length || 0,
+            toolCallsCount: toolCalls?.length || 0,
+            toolResultsCount: toolResults?.length || 0,
+            finishReason,
+            inputTokens: usage?.inputTokens,
+            outputTokens: usage?.outputTokens,
+          });
+        },
       });
     } catch (primaryError: any) {
       console.error(
@@ -184,56 +274,450 @@ export class GeminiAIService implements AIService {
         primaryError?.data?.error?.code === 503;
 
       if (isOverloadError) {
-        console.log(
-          '[AI] Overload detected, using fallback model (gemini-2.0-flash-lite)',
-        );
+        console.log('[AI-SDK5] Overload detected, using fallback model');
         usedFallback = true;
 
         // Tentar com modelo fallback
         result = await streamText({
-          model: this.fallbackModel,
-          system: this.promptService.getSystemPrompt(actor),
+          model: this.fallbackModel as any,
+          system: systemPrompt,
           messages: trimmedMessages,
-          tools: availableTools,
+          tools: toolsWithExecute, // ✅ Tools com execute functions (AI SDK 5.0 executa automaticamente)
+          temperature: 0.1,
           maxRetries: 2,
+          experimental_telemetry: { isEnabled: false },
+          onStepFinish: ({
+            text,
+            toolCalls,
+            toolResults,
+            finishReason,
+            usage,
+          }) => {
+            console.log('[AI-SDK5-FALLBACK] onStepFinish:', {
+              textLength: text?.length || 0,
+              toolCallsCount: toolCalls?.length || 0,
+              toolResultsCount: toolResults?.length || 0,
+              finishReason,
+            });
+          },
         });
       } else {
         throw primaryError;
       }
     }
 
-    // The AI SDK stream returns tool calls and text in separate parts.
-    let textContent = '';
-    const toolCalls: ToolCallPart[] = [];
+    // 6. ✅ SIMPLIFICADO: Processar stream (AI SDK já executou todas as tools!)
+    let finalText = '';
+    let toolCallsCount = 0;
 
     try {
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
-          textContent += part.textDelta;
+          finalText += part.text;
         } else if (part.type === 'tool-call') {
-          toolCalls.push(part);
+          toolCallsCount++;
+          console.log(`[AI-SDK5] Tool called: ${part.toolName}`);
+        } else if (part.type === 'tool-result') {
+          console.log(`[AI-SDK5] Tool result received for: ${part.toolName}`);
+        } else if (part.type === 'step-finish') {
+          console.log(`[AI-SDK5] Step ${part.stepNumber} finished`);
         } else if (part.type === 'error') {
-          console.error(`Stream error:`, part.error);
+          console.error(`[AI-SDK5] Stream error:`, part.error);
 
-          // Handle any unavailable tool error with standardized message
           if ((part.error as any)?.name === 'AI_NoSuchToolError') {
-            return 'Desculpe, não posso te ajudar com essa questão. Posso ajudá-lo com informações sobre seus dados acadêmicos, atividades ou preceptores da plataforma RADE.';
+            const errorMsg =
+              'Desculpe, não posso te ajudar com essa questão. Posso ajudá-lo com informações sobre seus dados acadêmicos, atividades ou preceptores da plataforma RADE.';
+            return {
+              text: errorMsg,
+              messages: [
+                ...trimmedMessages,
+                { role: 'assistant', content: errorMsg },
+              ],
+            };
           }
 
           throw new Error(`Stream error: ${JSON.stringify(part.error)}`);
         }
       }
     } catch (error) {
-      console.error(`Error reading stream:`, error);
+      console.error(`[AI-SDK5] Error reading stream:`, error);
       throw error;
     }
 
-    // If the model decides to call tools, we execute them and send the results back
-    if (toolCalls.length > 0) {
-      let currentDepth = 0;
-      let currentMessages = trimmedMessages;
+    console.log(
+      `[AI-SDK5] Stream complete. Text length: ${finalText.length}, Tools called: ${toolCallsCount}`,
+    );
+
+    // ✅ Aguardar o result.text completo (pode não estar no stream ainda)
+    const completeText = await result.text;
+    console.log(`[AI-SDK5] Complete text length: ${completeText.length}`);
+    console.log(`[AI-SDK5] Complete text content: "${completeText}"`);
+
+    // Usar completeText se finalText estiver vazio
+    const responseText = finalText || completeText;
+
+    if (!responseText || responseText.trim().length === 0) {
+      console.warn(
+        '[AI-SDK5] Empty response after tool execution! Making second call for final response...',
+      );
+
+      // ✅ CRITICAL FIX: result.steps é uma Promise, precisa fazer await!
+      const steps = await result.steps;
+      console.log('[AI-SDK5] Steps resolved, length:', steps?.length || 0);
+
+      // ✅ SOLUÇÃO CORRETA PARA GEMINI: Adicionar mensagem do usuário pedindo formatação
+      try {
+        // Debug: verificar o que está em result.response
+        console.log(
+          '[AI-SDK5] result.response?.messages length:',
+          result.response?.messages?.length || 0,
+        );
+
+        // ✅ CORREÇÃO: Usar result.response.messages diretamente (já no formato correto)
+        // NÃO construir manualmente - AI SDK 5 já retorna no formato correto
+        const messagesWithToolResults = [
+          ...trimmedMessages,
+          ...(result.response?.messages || []),
+        ];
+
+        console.log(
+          '[AI-SDK5] Second call with',
+          messagesWithToolResults.length,
+          'messages (original:',
+          trimmedMessages.length,
+          '+ response:',
+          result.response?.messages?.length || 0,
+          ')',
+        );
+        console.log(
+          '[AI-SDK5] Response messages roles:',
+          (result.response?.messages || []).map((m: any) => m.role).join(', '),
+        );
+
+        // ✅ SOLUÇÃO PARA GEMINI: Adicionar mensagem do usuário solicitando resposta formatada
+        // (NÃO usar mensagem assistant vazia - isso é específico do Claude)
+        const messagesForCompletion = [
+          ...messagesWithToolResults,
+          {
+            role: 'user' as const,
+            content:
+              'Com base nos dados que você obteve, forneça uma resposta clara e formatada para minha pergunta.',
+          },
+        ];
+
+        // ⚠️ CORREÇÃO: Incluir tools na segunda chamada para permitir generateReport
+        // O Gemini pode precisar executar generateReport após buscar os dados
+        const secondResult = await streamText({
+          model: this.primaryModel as any,
+          system: systemPrompt,
+          messages: messagesForCompletion,
+          tools: toolsWithExecute, // ✅ Incluir tools para permitir generateReport (AI SDK 5.0 executa automaticamente)
+          temperature: 0.3, // ⚠️ Aumentar temperatura para forçar geração de texto ao invés de reexecutar tools
+          maxRetries: 0,
+          experimental_telemetry: { isEnabled: false },
+        });
+
+        console.log('[AI-SDK5] Second call with tools enabled');
+
+        let secondText = '';
+        for await (const part of secondResult.fullStream) {
+          if (part.type === 'text-delta') {
+            secondText += part.text;
+          }
+        }
+
+        console.log(
+          '[AI-SDK5] Second call generated text length:',
+          secondText.length,
+        );
+
+        if (secondText && secondText.length > 0) {
+          const secondResponse = await secondResult.response;
+          const messagesWithResponse = [
+            ...trimmedMessages,
+            ...(secondResponse?.messages || [
+              { role: 'assistant', content: secondText },
+            ]),
+          ];
+          return {
+            text: secondText,
+            messages: messagesWithResponse,
+          };
+        }
+
+        // ✅ CRÍTICO: Se segunda chamada não gerou texto, verificar se executou tools
+        console.log('[AI-SDK5] Second call did not generate text, checking for tool results...');
+        const secondSteps = await secondResult.steps;
+        console.log('[AI-SDK5] Second call steps:', secondSteps?.length || 0);
+
+        if (secondSteps && secondSteps.length > 0) {
+          const lastSecondStep: any = secondSteps[secondSteps.length - 1];
+
+          if (lastSecondStep?.toolResults && lastSecondStep.toolResults.length > 0) {
+            console.log('[AI-SDK5] Second call has tool results, building response...');
+
+            const secondToolResults = lastSecondStep.toolResults.map((tr: any) => ({
+              toolName: tr.toolName,
+              result: tr.result || tr.output || tr,
+            }));
+
+            // ⚠️ CRÍTICO: Verificar se usuário pediu relatório mas generateReport não foi executado
+            const userWantsReport = /relat[óo]rio|pdf|csv|txt|exportar|download|gerar arquivo|gere um pdf/i.test(userMessage);
+            const hasGenerateReportTool = secondToolResults.some((tr: any) => tr.toolName === 'generateReport');
+
+            if (userWantsReport && !hasGenerateReportTool) {
+              console.log('[AI-SDK5] User requested report but generateReport was not executed, making third call...');
+
+              // Fazer terceira chamada para forçar execução de generateReport
+              try {
+                const secondResponse = await secondResult.response;
+                const messagesAfterSecond = [
+                  ...trimmedMessages,
+                  ...(secondResponse?.messages || []),
+                ];
+
+                console.log('[AI-SDK5] Third call with', messagesAfterSecond.length, 'messages');
+
+                const thirdResult = await streamText({
+                  model: usedFallback ? (this.fallbackModel as any) : (this.primaryModel as any),
+                  system: systemPrompt,
+                  messages: messagesAfterSecond,
+                  tools: toolsWithExecute,
+                  temperature: 0.1,
+                  maxRetries: 2,
+                  experimental_telemetry: { isEnabled: false },
+                });
+
+                let thirdText = '';
+                for await (const part of thirdResult.fullStream) {
+                  if (part.type === 'text-delta') {
+                    thirdText += part.text;
+                  } else if (part.type === 'tool-call') {
+                    console.log(`[AI-SDK5-THIRD] Tool called: ${part.toolName}`);
+                  }
+                }
+
+                console.log('[AI-SDK5] Third call generated text length:', thirdText.length);
+
+                if (thirdText && thirdText.trim().length > 0) {
+                  console.log('[AI-SDK5] Using third call text response');
+                  const thirdResponse = await thirdResult.response;
+                  return {
+                    text: thirdText,
+                    messages: [
+                      ...messagesAfterSecond,
+                      ...(thirdResponse?.messages || []),
+                    ],
+                  };
+                }
+
+                // Se terceira chamada também não gerou texto, verificar tool results
+                const thirdSteps = await thirdResult.steps;
+                if (thirdSteps && thirdSteps.length > 0) {
+                  const lastThirdStep: any = thirdSteps[thirdSteps.length - 1];
+                  if (lastThirdStep?.toolResults && lastThirdStep.toolResults.length > 0) {
+                    console.log('[AI-SDK5] Third call has tool results');
+                    const thirdToolResults = lastThirdStep.toolResults.map((tr: any) => ({
+                      toolName: tr.toolName,
+                      result: tr.result || tr.output || tr,
+                    }));
+
+                    const thirdFallbackResponse = this.buildFallbackResponseFromToolResults(
+                      thirdToolResults,
+                      userMessage,
+                    );
+
+                    if (thirdFallbackResponse && thirdFallbackResponse.length > 10) {
+                      const thirdResponse = await thirdResult.response;
+                      return {
+                        text: thirdFallbackResponse,
+                        messages: [
+                          ...messagesAfterSecond,
+                          ...(thirdResponse?.messages || []),
+                          { role: 'assistant', content: thirdFallbackResponse },
+                        ],
+                      };
+                    }
+                  }
+                }
+              } catch (thirdCallError) {
+                console.error('[AI-SDK5] Third call failed:', thirdCallError);
+              }
+            }
+
+            const secondFallbackResponse = this.buildFallbackResponseFromToolResults(
+              secondToolResults,
+              userMessage,
+            );
+
+            if (secondFallbackResponse && secondFallbackResponse.length > 10) {
+              console.log('[AI-SDK5] Using second call fallback response');
+
+              const secondResponse = await secondResult.response;
+              const messagesWithToolResults = [
+                ...trimmedMessages,
+                ...(secondResponse?.messages || []),
+                { role: 'assistant', content: secondFallbackResponse },
+              ];
+
+              return {
+                text: secondFallbackResponse,
+                messages: messagesWithToolResults,
+              };
+            }
+          }
+        }
+      } catch (secondCallError) {
+        console.error('[AI-SDK5] Second call failed:', secondCallError);
+      }
+
+      // Usar buildFallbackResponseFromToolResults se tiver tool results
+      if (steps && steps.length > 0) {
+        console.log('[AI-SDK5] Checking steps for tool results...');
+        const lastStep: any = steps[steps.length - 1];
+
+        if (lastStep?.toolResults && lastStep.toolResults.length > 0) {
+          console.log(
+            '[AI-SDK5] Found tool results, building fallback response',
+          );
+          console.log(
+            '[AI-SDK5] Raw toolResults structure:',
+            JSON.stringify(lastStep.toolResults).substring(0, 500),
+          );
+
+          const toolResults = lastStep.toolResults.map((tr: any) => ({
+            toolName: tr.toolName,
+            result: tr.result || tr.output || tr, // Tentar diferentes propriedades
+          }));
+
+          const fallbackResponse = this.buildFallbackResponseFromToolResults(
+            toolResults,
+            userMessage,
+          );
+
+          if (fallbackResponse && fallbackResponse.length > 10) {
+            console.log('[AI-SDK5] Using fallback response');
+
+            // ✅ CRÍTICO: Construir histórico com tool calls + tool results
+            const firstResponse = await result.response;
+            const messagesWithToolResults = [
+              ...trimmedMessages,
+              ...(firstResponse?.messages || []), // Tool calls + results da primeira chamada
+              { role: 'assistant', content: fallbackResponse },
+            ];
+
+            console.log(
+              '[AI-SDK5-FALLBACK] Messages with tool results:',
+              messagesWithToolResults.length,
+            );
+            console.log(
+              '[AI-SDK5-FALLBACK] Roles:',
+              messagesWithToolResults.map((m: any) => m.role).join(', '),
+            );
+
+            return {
+              text: fallbackResponse,
+              messages: messagesWithToolResults,
+            };
+          }
+        }
+      }
+
+      console.error('[AI-SDK5] No fallback available, returning error message');
+      const errorMsg =
+        'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
+      return {
+        text: errorMsg,
+        messages: [
+          ...trimmedMessages,
+          { role: 'assistant', content: errorMsg },
+        ],
+      };
+    }
+
+    // 7. ✅ Salvar histórico com response.messages (AI SDK gerenciou tudo!)
+    const responseMessages = await result.response;
+    console.log(
+      '[AI-SDK5] result.response.messages length:',
+      responseMessages?.messages?.length || 0,
+    );
+
+    const updatedMessages = [
+      ...trimmedMessages,
+      ...(responseMessages?.messages || [
+        { role: 'assistant', content: responseText },
+      ]),
+    ];
+
+    console.log(
+      '[AI-SDK5] Total messages in updated history:',
+      updatedMessages.length,
+    );
+    console.log(
+      '[AI-SDK5] Message roles:',
+      updatedMessages.map((m: any) => m.role).join(', '),
+    );
+
+    this.cacheService.set(conversationKey, updatedMessages, 3600000);
+
+    // 8. Métricas finais
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+    const realInputTokens = result.usage?.inputTokens || estimatedInputTokens;
+    const realOutputTokens =
+      result.usage?.outputTokens || this.estimateTokens(responseText);
+    const totalTokens =
+      result.usage?.totalTokens || realInputTokens + realOutputTokens;
+    const estimatedCost =
+      (realInputTokens * 0.075 + realOutputTokens * 0.3) / 1000000;
+
+    console.log('[AI-SDK5] Response time:', responseTime, 'ms');
+    console.log('[AI-SDK5] Tools called:', toolCallsCount);
+    console.log('[AI-SDK5] Steps used:', result.steps?.length || 1);
+    console.log(
+      '[AI-SDK5] Tokens - Input:',
+      realInputTokens,
+      'Output:',
+      realOutputTokens,
+      'Total:',
+      totalTokens,
+    );
+    console.log('[AI-SDK5] Estimated cost: $', estimatedCost.toFixed(6));
+
+    this.recordMetric(
+      actor,
+      userMessage,
+      responseTime,
+      realInputTokens,
+      realOutputTokens,
+      totalTokens,
+      estimatedCost,
+      [], // TODO: Extrair tool names dos steps
+      result.steps?.length || 1,
+      usedFallback,
+    );
+
+    // ✅ Retornar texto E mensagens completas (com tool results)
+    return {
+      text: responseText,
+      messages: updatedMessages,
+    };
+  }
+
+  // ✅ Método processToolCall simplificado concluído!
+  // Reduzido de ~540 linhas para ~200 linhas usando AI SDK 5 maxSteps
+
+  // Estimativa simples de tokens (aprox. 4 caracteres = 1 token)
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  // ⚠️ OLD CODE BELOW - Código antigo comentado para referência
+  // TODO: Deletar completamente após testes confirmarem que maxSteps funciona
+  /*
       let allToolCalls: ToolCallPart[] = toolCalls;
       let finalResponseText = '';
+      let currentResult = result; // Manter referência ao result atual
 
       // Processar tool calls recursivamente até maxToolDepth
       while (allToolCalls.length > 0 && currentDepth < maxToolDepth) {
@@ -242,8 +726,7 @@ export class GeminiAIService implements AIService {
           `[AI] Processing tool calls at depth ${currentDepth}/${maxToolDepth}`,
         );
 
-        currentMessages.push({ role: 'assistant', content: allToolCalls });
-
+        // Executar as tools
         const toolResults = await Promise.all(
           allToolCalls.map(async (toolCall) => {
             const result = await this.executeTool(toolCall);
@@ -256,7 +739,15 @@ export class GeminiAIService implements AIService {
           }),
         );
 
-        currentMessages.push({ role: 'tool', content: toolResults });
+        // ✅ Usar response.messages do AI SDK em vez de construir manualmente
+        // Isso garante que o formato está correto para o Gemini
+        if (currentResult.response?.messages) {
+          currentMessages.push(...currentResult.response.messages);
+        } else {
+          // Fallback para compatibilidade (não deveria acontecer com AI SDK moderno)
+          currentMessages.push({ role: 'assistant', content: allToolCalls });
+          currentMessages.push({ role: 'tool', content: toolResults });
+        }
 
         // Tentar fallback inteligente primeiro
         finalResponseText = this.buildFallbackResponseFromToolResults(
@@ -314,6 +805,9 @@ export class GeminiAIService implements AIService {
             messages: currentMessages,
             tools: availableTools, // ✅ Sempre passar tools
           });
+
+          // Atualizar currentResult para usar response.messages na próxima iteração
+          currentResult = nextResult;
 
           const nextToolCalls: ToolCallPart[] = [];
           finalResponseText = ''; // Reset para capturar nova resposta
@@ -381,6 +875,9 @@ export class GeminiAIService implements AIService {
                 tools: availableTools,
                 maxRetries: 2,
               });
+
+              // Atualizar currentResult para usar response.messages na próxima iteração
+              currentResult = fallbackResult;
 
               const fallbackToolCalls: ToolCallPart[] = [];
               finalResponseText = '';
@@ -638,11 +1135,8 @@ export class GeminiAIService implements AIService {
 
     return textContent;
   }
-
-  // Estimativa simples de tokens (aprox. 4 caracteres = 1 token)
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
-  }
+  */
+  // END OF OLD CODE - Fim do código antigo comentado
 
   // Gravar métrica da interação
   private recordMetric(
@@ -682,9 +1176,20 @@ export class GeminiAIService implements AIService {
     userMessage: string,
   ): string {
     try {
+      console.log(
+        '[FALLBACK] Building response for',
+        toolResults.length,
+        'tool results',
+      );
+      console.log(
+        '[FALLBACK] Tool results:',
+        JSON.stringify(toolResults).substring(0, 300),
+      );
+
       // Para casos simples onde conseguimos responder diretamente
       if (toolResults.length === 1) {
         const tr = toolResults[0];
+        console.log('[FALLBACK] Single tool result:', tr.toolName);
 
         // Relatório gerado
         if (tr.toolName === 'generateReport') {
@@ -698,14 +1203,17 @@ export class GeminiAIService implements AIService {
         // Dados do estudante
         if (tr.toolName === 'getStudentInfo' && tr.result) {
           const data = tr.result;
-          let response = `Seu nome é ${data.studentName}, seu e-mail é ${data.studentEmail}`;
+          let response = `Seus dados:\n`;
+          response += `• Nome: ${data.studentName}\n`;
+          response += `• Email: ${data.studentEmail}\n`;
           if (data.studentPhone)
-            response += ` e seu telefone é ${data.studentPhone}`;
-          response += `. Você faz parte do grupo ${data.groupNames?.[0] || 'não especificado'}`;
+            response += `• Telefone: ${data.studentPhone}\n`;
+          if (data.groupNames?.[0])
+            response += `• Grupo: ${data.groupNames[0]}\n`;
           if (data.organizationsAndCourses?.[0]) {
-            response += ` e estuda ${data.organizationsAndCourses[0].courseNames?.[0] || ''} na ${data.organizationsAndCourses[0].organizationName}`;
+            const org = data.organizationsAndCourses[0];
+            response += `• Curso: ${org.courseNames?.[0] || 'Não especificado'} na ${org.organizationName}`;
           }
-          response += '.';
           return response;
         }
 
@@ -716,7 +1224,7 @@ export class GeminiAIService implements AIService {
           !tr.result.error
         ) {
           const person = tr.result;
-          return `Sim.\n\n📋 Dados de ${person.name}:\n• Email: ${person.email || 'Não disponível'}${person.phone ? `\n• Telefone: ${person.phone}` : ''}`;
+          return `📋 ${person.name}\n\n• Email: ${person.email || 'Não disponível'}${person.phone ? `\n• Telefone: ${person.phone}` : ''}`;
         }
 
         // Pessoa não encontrada ou sugestão de similar
@@ -731,6 +1239,266 @@ export class GeminiAIService implements AIService {
             return `${tr.result.error}\n\n📋 Dados de ${person.name}:\n• Email: ${person.email || 'Não disponível'}${person.phone ? `\n• Telefone: ${person.phone}` : ''}`;
           }
           return tr.result.error;
+        }
+
+        // Profissionais do estudante
+        if (
+          tr.toolName === 'getStudentsProfessionals' &&
+          Array.isArray(tr.result)
+        ) {
+          if (tr.result.length === 0) {
+            return 'Você não possui preceptores cadastrados no momento.';
+          }
+
+          // Verificar se o usuário quer a lista completa (sem buscar nome específico)
+          const messageLower = userMessage
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const wantsFullList =
+            /\b(quais|todos|lista|meus|quem sao|mostre)\b/.test(messageLower) &&
+            !/\b(chamado|nome|tem|tenho)\b/.test(messageLower);
+
+          // Se quer lista completa, retornar todos sem buscar nome
+          if (wantsFullList) {
+            let response = `Seus preceptores (${tr.result.length}):\n\n`;
+            tr.result.forEach((prof: any, idx: number) => {
+              response += `${idx + 1}. ${prof.name}\n`;
+              response += `   • Email: ${prof.email || 'Não disponível'}\n`;
+              if (prof.phone) response += `   • Telefone: ${prof.phone}\n`;
+              if (prof.groupNames?.length > 0) {
+                response += `   • Grupos: ${prof.groupNames.join(', ')}\n`;
+              }
+              response += '\n';
+            });
+            return response.trim();
+          }
+
+          // Verificar se a pergunta menciona um nome específico
+          const searchWords = messageLower
+            .split(/\s+/)
+            .filter((w) => w.length >= 3);
+
+          // Função para calcular distância de edição
+          const editDistance = (a: string, b: string): number => {
+            const matrix: number[][] = [];
+            for (let i = 0; i <= b.length; i++) {
+              matrix[i] = [i];
+            }
+            for (let j = 0; j <= a.length; j++) {
+              matrix[0][j] = j;
+            }
+            for (let i = 1; i <= b.length; i++) {
+              for (let j = 1; j <= a.length; j++) {
+                if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                  matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                  matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1,
+                  );
+                }
+              }
+            }
+            return matrix[b.length][a.length];
+          };
+
+          let exactMatch: any = null;
+          let similarMatch: any = null;
+
+          // Buscar match exato primeiro
+          exactMatch = tr.result.find((prof: any) => {
+            const profNameLower = prof.name
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '');
+            const profWords = profNameLower.split(/\s+/);
+            return searchWords.every((searchWord) =>
+              profWords.some((profWord) => profWord === searchWord),
+            );
+          });
+
+          // Se não encontrou exato, buscar similar
+          if (!exactMatch) {
+            similarMatch = tr.result.find((prof: any) => {
+              const profNameLower = prof.name
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+              const profWords = profNameLower.split(/\s+/);
+
+              return searchWords.some((searchWord) => {
+                return profWords.some((profWord) => {
+                  if (searchWord.length >= 4 && profWord.length >= 4) {
+                    const distance = editDistance(searchWord, profWord);
+                    const maxErrors = searchWord.length <= 6 ? 1 : 2;
+                    const minSimilarity = 0.75;
+                    const similarity =
+                      1 -
+                      distance / Math.max(searchWord.length, profWord.length);
+                    return distance <= maxErrors && similarity >= minSimilarity;
+                  }
+                  return false;
+                });
+              });
+            });
+          }
+
+          // Se encontrou match exato
+          if (exactMatch) {
+            let response = `Sim! ${exactMatch.name} é um dos seus preceptores.\n\n`;
+            response += `📋 Dados:\n`;
+            response += `• Email: ${exactMatch.email || 'Não disponível'}\n`;
+            if (exactMatch.phone)
+              response += `• Telefone: ${exactMatch.phone}\n`;
+            if (exactMatch.groupNames?.length > 0) {
+              response += `• Grupos: ${exactMatch.groupNames.join(', ')}`;
+            }
+            return response.trim();
+          }
+
+          // Se encontrou similar
+          if (similarMatch) {
+            let response = `Não encontrei ninguém com esse nome exato, mas você tem ${similarMatch.name} que é parecido. É essa pessoa?\n\n`;
+            response += `📋 Dados:\n`;
+            response += `• Email: ${similarMatch.email || 'Não disponível'}\n`;
+            if (similarMatch.phone)
+              response += `• Telefone: ${similarMatch.phone}\n`;
+            if (similarMatch.groupNames?.length > 0) {
+              response += `• Grupos: ${similarMatch.groupNames.join(', ')}`;
+            }
+            return response.trim();
+          }
+
+          // Se não encontrou nenhum match com nome, listar todos
+          let response = `Seus preceptores (${tr.result.length}):\n\n`;
+          tr.result.forEach((prof: any, idx: number) => {
+            response += `${idx + 1}. ${prof.name}\n`;
+            response += `   • Email: ${prof.email || 'Não disponível'}\n`;
+            if (prof.phone) response += `   • Telefone: ${prof.phone}\n`;
+            if (prof.groupNames?.length > 0) {
+              response += `   • Grupos: ${prof.groupNames.join(', ')}\n`;
+            }
+            response += '\n';
+          });
+          return response.trim();
+        }
+
+        // Atividades agendadas do estudante
+        if (
+          tr.toolName === 'getStudentsScheduledActivities' &&
+          Array.isArray(tr.result)
+        ) {
+          if (tr.result.length === 0) {
+            return 'Você não possui atividades agendadas no momento.';
+          }
+
+          let response = `Suas atividades agendadas (${tr.result.length}):\n\n`;
+          tr.result.forEach((activity: any, idx: number) => {
+            response += `${idx + 1}. ${activity.activityName || 'Atividade'}\n`;
+            if (activity.scheduledDate)
+              response += `   • Data: ${activity.scheduledDate}\n`;
+            if (activity.location)
+              response += `   • Local: ${activity.location}\n`;
+            if (activity.description)
+              response += `   • Descrição: ${activity.description}\n`;
+            response += '\n';
+          });
+          return response.trim();
+        }
+
+        // Profissionais do coordenador
+        if (
+          tr.toolName === 'getCoordinatorsProfessionals' &&
+          Array.isArray(tr.result)
+        ) {
+          if (tr.result.length === 0) {
+            return 'Você não possui profissionais supervisionados no momento.';
+          }
+
+          // Mesma lógica de lista completa
+          const messageLower = userMessage
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const wantsFullList =
+            /\b(quais|todos|lista|meus|quem sao|mostre)\b/.test(messageLower) &&
+            !/\b(chamado|nome|tem|tenho)\b/.test(messageLower);
+
+          if (wantsFullList || tr.result.length <= 10) {
+            let response = `Seus profissionais supervisionados (${tr.result.length}):\n\n`;
+            tr.result.forEach((prof: any, idx: number) => {
+              response += `${idx + 1}. ${prof.name}\n`;
+              response += `   • Email: ${prof.email || 'Não disponível'}\n`;
+              if (prof.phone) response += `   • Telefone: ${prof.phone}\n`;
+              response += '\n';
+            });
+            return response.trim();
+          }
+
+          return `Você tem ${tr.result.length} profissionais supervisionados. Use um filtro específico ou solicite um relatório para ver todos.`;
+        }
+
+        // Estudantes do coordenador
+        if (
+          tr.toolName === 'getCoordinatorsStudents' &&
+          Array.isArray(tr.result)
+        ) {
+          if (tr.result.length === 0) {
+            return 'Você não possui estudantes supervisionados no momento.';
+          }
+
+          // Mesma lógica de lista completa, mas com limite maior (100+ estudantes)
+          const messageLower = userMessage
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const wantsFullList =
+            /\b(quais|todos|lista|meus|quem sao|mostre)\b/.test(messageLower) &&
+            !/\b(chamado|nome|tem|tenho)\b/.test(messageLower);
+
+          // Se tem muitos estudantes (>20), não listar todos no chat
+          if (tr.result.length > 20) {
+            return `Você tem ${tr.result.length} estudantes supervisionados. Isso é muita informação para mostrar no chat. Gostaria de gerar um relatório em PDF/CSV?`;
+          }
+
+          if (wantsFullList) {
+            let response = `Seus estudantes supervisionados (${tr.result.length}):\n\n`;
+            tr.result.forEach((student: any, idx: number) => {
+              response += `${idx + 1}. ${student.name}\n`;
+              response += `   • Email: ${student.email || 'Não disponível'}\n`;
+              if (student.phone)
+                response += `   • Telefone: ${student.phone}\n`;
+              response += '\n';
+            });
+            return response.trim();
+          }
+
+          return `Você tem ${tr.result.length} estudantes. Gostaria de ver todos ou buscar um específico?`;
+        }
+
+        // Atividades em andamento do coordenador
+        if (
+          tr.toolName === 'getCoordinatorsOngoingActivities' &&
+          Array.isArray(tr.result)
+        ) {
+          if (tr.result.length === 0) {
+            return 'Não há atividades em andamento no momento.';
+          }
+
+          let response = `Atividades em andamento (${tr.result.length}):\n\n`;
+          tr.result.forEach((activity: any, idx: number) => {
+            response += `${idx + 1}. ${activity.activityName || 'Atividade'}\n`;
+            if (activity.startDate)
+              response += `   • Início: ${activity.startDate}\n`;
+            if (activity.location)
+              response += `   • Local: ${activity.location}\n`;
+            if (activity.participants)
+              response += `   • Participantes: ${activity.participants}\n`;
+            response += '\n';
+          });
+          return response.trim();
         }
       }
 
@@ -846,7 +1614,49 @@ export class GeminiAIService implements AIService {
       data: newData,
     };
 
-    existing.items.push(newItem);
+    // 🚀 DEDUPLICAÇÃO: Verificar se já existe item idêntico ou muito similar
+    const isDuplicate = existing.items.some((existingItem: any) => {
+      // Mesmo toolName
+      if (existingItem.toolName !== toolName) return false;
+
+      // Comparar dados por JSON (detecção simples de duplicata exata)
+      const existingDataStr = JSON.stringify(existingItem.data);
+      const newDataStr = JSON.stringify(newData);
+
+      if (existingDataStr === newDataStr) {
+        console.log(
+          `[CACHE] ⚠️ Duplicate data detected for ${toolName}, skipping accumulation`,
+        );
+        return true;
+      }
+
+      // Para findPersonByName: verificar se é a mesma pessoa (mesmo CPF ou email)
+      if (toolName === 'findPersonByName') {
+        const existingCpf =
+          existingItem.data?.cpf || existingItem.data?.data?.cpf;
+        const newCpf = newData?.cpf || newData?.data?.cpf;
+
+        if (existingCpf && newCpf && existingCpf === newCpf) {
+          console.log(
+            `[CACHE] ⚠️ Same person already in accumulated data (CPF: ${newCpf}), skipping`,
+          );
+          return true;
+        }
+      }
+
+      return false;
+    });
+
+    if (!isDuplicate) {
+      existing.items.push(newItem);
+      console.log(
+        `[CACHE] Accumulated data for ${toolName}, total items: ${existing.items.length}`,
+      );
+    } else {
+      console.log(
+        `[CACHE] Data not accumulated (duplicate), total items remain: ${existing.items.length}`,
+      );
+    }
 
     // Marcar como mais recente (para referências "desse", "aquele")
     existing.mostRecent = newItem;
@@ -855,10 +1665,6 @@ export class GeminiAIService implements AIService {
     // Conversas longas podem acumular quantos dados precisarem
 
     this.cacheService.set(cacheKey, existing, 3600000); // Expira em 1 hora
-
-    console.log(
-      `[CACHE] Accumulated data for ${toolName}, total items: ${existing.items.length}`,
-    );
   }
 
   private getAccumulatedData(cpf: string): any[] {
@@ -901,9 +1707,14 @@ export class GeminiAIService implements AIService {
       nome: ['studentName', 'coordinatorName', 'name'],
       email: ['studentEmail', 'coordinatorEmail', 'email'],
       telefone: ['studentPhone', 'coordinatorPhone', 'phone'],
+      grupo: ['groupNames'],
       grupos: ['groupNames'],
-      instituição: ['organizationsAndCourses'],
+      curso: ['organizationsAndCourses'],
       cursos: ['organizationsAndCourses'],
+      instituição: ['organizationsAndCourses'],
+      instituicao: ['organizationsAndCourses'],
+      organização: ['organizationsAndCourses'],
+      organizacao: ['organizationsAndCourses'],
     };
 
     // Extrair campos solicitados da string
@@ -1226,22 +2037,125 @@ export class GeminiAIService implements AIService {
         }
 
       case 'generateReport':
-        const lastData = this.cacheService.get(
+        console.log('[REPORT-DEBUG] ========================================');
+        console.log('[REPORT-DEBUG] generateReport tool execution started');
+        console.log('[REPORT-DEBUG] CPF:', args.cpf);
+        console.log('[REPORT-DEBUG] Format:', args.format);
+
+        let lastData = this.cacheService.get(
           this.getLastResultCacheKey(args.cpf),
         );
-        const accumulatedData = this.getAccumulatedData(args.cpf);
+        let accumulatedData = this.getAccumulatedData(args.cpf);
         const lastUserRequest = this.cacheService.get(
           this.getLastUserRequestCacheKey(args.cpf),
         ) as string | undefined;
 
+        console.log(
+          '[REPORT-DEBUG] Cache status: lastData=',
+          !!lastData,
+          'accumulatedData.length=',
+          accumulatedData.length,
+        );
+
+        // 🚀 PRIORIDADE ALTA: Auto-fetch de dados se cache estiver vazio
         if (!lastData && accumulatedData.length === 0) {
+          console.log(
+            '[REPORT-DEBUG] Cache empty! Attempting auto-fetch of user data...',
+          );
+
+          try {
+            // Tentar buscar dados do estudante primeiro
+            try {
+              console.log('[REPORT-DEBUG] Fetching student info...');
+              const studentData =
+                await this.virtualAssistanceService.getStudentInfo(args.cpf);
+
+              console.log(
+                '[REPORT-DEBUG] Student info fetched successfully:',
+                !!studentData,
+              );
+
+              // Salvar no cache
+              const studentToolCacheKey = this.getToolCacheKey(
+                'getStudentInfo',
+                args.cpf,
+              );
+              this.cacheService.set(studentToolCacheKey, studentData, 3600000);
+              this.cacheService.set(
+                this.getLastResultCacheKey(args.cpf),
+                studentData,
+                3600000,
+              );
+              this.accumulateData(args.cpf, studentData, 'getStudentInfo');
+
+              lastData = studentData;
+              accumulatedData = this.getAccumulatedData(args.cpf);
+
+              console.log('[REPORT-DEBUG] Auto-fetch successful (student)');
+            } catch (studentError) {
+              // Se não é estudante, tentar coordenador
+              console.log(
+                '[REPORT-DEBUG] Not a student, trying coordinator...',
+              );
+
+              const coordinatorData =
+                await this.virtualAssistanceService.getCoordinatorInfo(
+                  args.cpf,
+                );
+
+              console.log(
+                '[REPORT-DEBUG] Coordinator info fetched successfully:',
+                !!coordinatorData,
+              );
+
+              // Salvar no cache
+              const coordinatorToolCacheKey = this.getToolCacheKey(
+                'getCoordinatorInfo',
+                args.cpf,
+              );
+              this.cacheService.set(
+                coordinatorToolCacheKey,
+                coordinatorData,
+                3600000,
+              );
+              this.cacheService.set(
+                this.getLastResultCacheKey(args.cpf),
+                coordinatorData,
+                3600000,
+              );
+
+              lastData = coordinatorData;
+              accumulatedData = this.getAccumulatedData(args.cpf);
+
+              console.log('[REPORT-DEBUG] Auto-fetch successful (coordinator)');
+            }
+          } catch (autoFetchError) {
+            console.error(
+              '[REPORT-DEBUG] Auto-fetch failed:',
+              autoFetchError.message,
+            );
+
+            return {
+              error:
+                'Não encontrei dados para gerar um relatório. Por favor, verifique se seu CPF está cadastrado no sistema.',
+            };
+          }
+        }
+
+        // Verificar novamente se temos dados
+        if (!lastData && accumulatedData.length === 0) {
+          console.error('[REPORT-DEBUG] Still no data after auto-fetch');
+
           return {
             error:
-              'Não encontrei dados para gerar um relatório. Por favor, faça uma busca primeiro.',
+              'Não consegui obter os dados necessários. Por favor, faça uma busca primeiro ou verifique sua conexão.',
           };
         }
 
-        const { format, fieldsRequested } = args;
+        console.log('[REPORT-DEBUG] Proceeding with report generation...');
+
+        const { format: requestedFormat, fieldsRequested } = args;
+        const format = requestedFormat || 'pdf'; // Default to PDF if not specified
 
         // Se tem múltiplos dados acumulados (ex: busca de estudante + preceptor), combinar
         let dataToUse = lastData;
@@ -1294,5 +2208,117 @@ export class GeminiAIService implements AIService {
       default:
         return { error: 'Unknown tool' };
     }
+  }
+
+  /**
+   * Trimming inteligente de mensagens: preserva tool-results importantes
+   * Evita perder tool-results necessários para segunda chamada do Gemini
+   */
+  private smartTrimMessages(
+    messages: CoreMessage[],
+    maxTotal: number = 10,
+  ): CoreMessage[] {
+    if (messages.length <= maxTotal) {
+      return messages;
+    }
+
+    console.log(
+      '[SMART-TRIM] Original message count:',
+      messages.length,
+      'Target:',
+      maxTotal,
+    );
+
+    // Garantir que preservamos:
+    // 1. Última mensagem user (sempre)
+    // 2. Pelo menos as últimas 2 mensagens tool
+    // 3. Messages assistant que precedem tool calls
+
+    const toolMessages: CoreMessage[] = [];
+    const assistantWithToolCalls: CoreMessage[] = [];
+    const regularMessages: CoreMessage[] = [];
+
+    // Separar mensagens por tipo
+    messages.forEach((msg) => {
+      if (msg.role === 'tool') {
+        toolMessages.push(msg);
+      } else if (
+        msg.role === 'assistant' &&
+        Array.isArray(msg.content) &&
+        msg.content.some((part: any) => part.type === 'tool-call')
+      ) {
+        assistantWithToolCalls.push(msg);
+      } else {
+        regularMessages.push(msg);
+      }
+    });
+
+    console.log('[SMART-TRIM] Message types:', {
+      tool: toolMessages.length,
+      assistantWithToolCalls: assistantWithToolCalls.length,
+      regular: regularMessages.length,
+    });
+
+    // Preservar últimas 2 tool messages
+    const toolsToKeep = toolMessages.slice(-2);
+
+    // Preservar assistant messages que geraram esses tool calls
+    const assistantToKeep = assistantWithToolCalls.filter((assistantMsg) => {
+      // Verificar se algum tool-result corresponde a este assistant
+      return toolsToKeep.some((toolMsg: any) => {
+        if (!Array.isArray(assistantMsg.content)) return false;
+
+        const toolCalls = assistantMsg.content.filter(
+          (part: any) => part.type === 'tool-call',
+        );
+
+        if (!Array.isArray(toolMsg.content)) return false;
+
+        return toolMsg.content.some((toolResult: any) => {
+          return toolCalls.some(
+            (tc: any) => tc.toolCallId === toolResult.toolCallId,
+          );
+        });
+      });
+    });
+
+    // Calcular quantas mensagens regulares podemos manter
+    const reservedSlots = toolsToKeep.length + assistantToKeep.length + 1; // +1 para última user message
+    const regularSlotsAvailable = Math.max(0, maxTotal - reservedSlots);
+
+    // Pegar últimas mensagens regulares
+    const regularToKeep = regularMessages.slice(-regularSlotsAvailable);
+
+    // Reconstruir array mantendo ordem cronológica
+    const result: CoreMessage[] = [];
+    const toKeepSet = new Set([
+      ...toolsToKeep,
+      ...assistantToKeep,
+      ...regularToKeep,
+    ]);
+
+    // Adicionar mensagens na ordem original
+    messages.forEach((msg) => {
+      if (toKeepSet.has(msg)) {
+        result.push(msg);
+      }
+    });
+
+    // Garantir que última mensagem é sempre preservada
+    const lastMessage = messages[messages.length - 1];
+    if (!result.includes(lastMessage)) {
+      if (result.length >= maxTotal) {
+        result.shift(); // Remover primeira para dar espaço
+      }
+      result.push(lastMessage);
+    }
+
+    console.log('[SMART-TRIM] Result message count:', result.length);
+    console.log(
+      '[SMART-TRIM] Preserved tools:',
+      result.filter((m) => m.role === 'tool').length,
+    );
+
+    return result;
   }
 }
