@@ -67,11 +67,11 @@ export class TestHybridChatController {
     private readonly geminiAiService: GeminiAIService,
   ) {}
 
-  @Post('hybrid')
+  @Post('test_hybrid')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Chat híbrido com menu + IA',
-    description: `Endpoint principal para fluxo híbrido (menu-driven + AI assistance).
+    summary: '[TESTE] Chat híbrido com menu + IA',
+    description: `Endpoint de teste para fluxo híbrido (menu-driven + AI assistance).
 
 Funcionalidades:
 - Fluxo guiado por menus para estudantes e coordenadores

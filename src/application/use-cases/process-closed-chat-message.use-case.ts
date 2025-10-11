@@ -1,6 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { UserRepository } from '../../domain/repositories/user.repository';
-import { ClosedChatFlow, ClosedChatState } from '../../domain/flows/closed-chat.flow';
+import {
+  ClosedChatFlow,
+  ClosedChatState,
+} from '../../domain/flows/closed-chat.flow';
 import { User } from '../../domain/entities/user.entity';
 import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
@@ -27,11 +30,13 @@ export class ProcessClosedChatMessageUseCase {
     private readonly closedChatFlow: ClosedChatFlow,
   ) {}
 
-  async execute(request: ProcessClosedChatMessageRequest): Promise<ProcessClosedChatMessageResponse> {
+  async execute(
+    request: ProcessClosedChatMessageRequest,
+  ): Promise<ProcessClosedChatMessageResponse> {
     try {
       // Logic to find user is similar to open chat, we can extract it later
       let user: User | null = null;
-      
+
       if (request.userId) {
         user = await this.userRepository.findById(request.userId);
       } else if (request.phone) {
@@ -43,7 +48,9 @@ export class ProcessClosedChatMessageUseCase {
       const { response, nextState } = await this.closedChatFlow.handle(
         request.message,
         request.state ?? null,
-        user || undefined
+        user || undefined,
+        undefined, // isTestMode
+        request.environment, // environment
       );
 
       return {
@@ -51,15 +58,15 @@ export class ProcessClosedChatMessageUseCase {
         nextState,
         success: true,
       };
-
     } catch (error) {
       console.error('Error processing closed chat message:', error);
       return {
-        response: 'Desculpe, ocorreu um erro interno no fluxo de chat. Tente novamente em alguns instantes.',
+        response:
+          'Desculpe, ocorreu um erro interno no fluxo de chat. Tente novamente em alguns instantes.',
         success: false,
         nextState: request.state ?? null, // Return the same state on error
-        error: error.message
+        error: error.message,
       };
     }
   }
-} 
+}

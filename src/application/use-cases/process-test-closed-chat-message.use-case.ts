@@ -1,6 +1,9 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { UserRepository } from '../../domain/repositories/user.repository';
-import { ClosedChatFlow, ClosedChatState } from '../../domain/flows/closed-chat.flow';
+import {
+  ClosedChatFlow,
+  ClosedChatState,
+} from '../../domain/flows/closed-chat.flow';
 import { User } from '../../domain/entities/user.entity';
 import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
@@ -27,9 +30,14 @@ export class ProcessTestClosedChatMessageUseCase {
     private readonly closedChatFlow: ClosedChatFlow,
   ) {}
 
-  async execute(request: ProcessTestClosedChatMessageRequest): Promise<ProcessTestClosedChatMessageResponse> {
+  async execute(
+    request: ProcessTestClosedChatMessageRequest,
+  ): Promise<ProcessTestClosedChatMessageResponse> {
     try {
-      console.log('[TEST-CLOSED-USE-CASE] Processing test closed chat message:', request.message);
+      console.log(
+        '[TEST-CLOSED-USE-CASE] Processing test closed chat message:',
+        request.message,
+      );
 
       // Logic to find user is similar to open chat, we can extract it later
       let user: User | null = null;
@@ -46,7 +54,8 @@ export class ProcessTestClosedChatMessageUseCase {
         request.message,
         request.state ?? null,
         user || undefined,
-        true // isTestMode = true para test_closed
+        true, // isTestMode = true para test_closed
+        request.environment, // environment
       );
 
       // Add test prefix to the response
@@ -57,14 +66,14 @@ export class ProcessTestClosedChatMessageUseCase {
         nextState,
         success: true,
       };
-
     } catch (error) {
       console.error('Error processing test closed chat message:', error);
       return {
-        response: '[TESTE] Desculpe, ocorreu um erro interno no fluxo de chat. Tente novamente em alguns instantes.',
+        response:
+          '[TESTE] Desculpe, ocorreu um erro interno no fluxo de chat. Tente novamente em alguns instantes.',
         success: false,
         nextState: request.state ?? null, // Return the same state on error
-        error: error.message
+        error: error.message,
       };
     }
   }
