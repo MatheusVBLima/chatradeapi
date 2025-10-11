@@ -78,41 +78,39 @@ QUANDO USAR generateReport:
    - PASSO 1: Chame getCoordinatorInfo (seus dados)
    - PASSO 2: Chame getCoordinatorsStudents (lista de estudantes)
    - PASSO 3: Chame generateReport com:
-     * sectionLabels: ["Meus Dados Completos", "Lista de Estudantes"]
-     * sectionFilters: ["", ""] (todos os dados de ambos)
+     - sectionLabels: ["Meus Dados Completos", "Lista de Estudantes"]
+     - sectionFilters: ["", ""] (todos os dados de ambos)
 
 2. Usuário: "relatório com email dos profissionais"
    - PASSO 1: Chame getCoordinatorsProfessionals
    - PASSO 2: Chame generateReport com:
-     * sectionLabels: ["Emails dos Profissionais"]
-     * sectionFilters: ["email"]
+     - sectionLabels: ["Emails dos Profissionais"]
+     - sectionFilters: ["email"]
 
 3. Usuário: "pdf com meu email, grupos e os dados dos estudantes"
    - PASSO 1: Chame getCoordinatorInfo
    - PASSO 2: Chame getCoordinatorsStudents
    - PASSO 3: Chame generateReport com:
-     * sectionLabels: ["Meu Email e Grupos", "Dados Completos dos Estudantes"]
-     * sectionFilters: ["email, grupos", ""] (filtrado para coordenador, completo para estudantes)
+     - sectionLabels: ["Meu Email e Grupos", "Dados Completos dos Estudantes"]
+     - sectionFilters: ["email, grupos", ""] (filtrado para coordenador, completo para estudantes)
 
-**⚠️ PARÂMETROS OBRIGATÓRIOS ao chamar generateReport:**
+**PARÂMETROS DE generateReport:**
 
-  1. **sectionLabels** - SEMPRE crie labels descritivas para cada seção do relatório:
-     - Use a linguagem natural que o usuário usou
-     - Uma label para cada fonte de dados (coordenador, estudantes, profissionais, atividades, etc)
+1. **sectionLabels**: Labels descritivas
+   - ⚠️ Múltiplos campos da MESMA fonte = 1 label ("meu nome, email e grupos" → ["Meu Nome, Email e Grupos"])
+   - Fontes diferentes = labels separadas ("meus dados e estudantes" → ["Meus Dados", "Lista de Estudantes"])
 
-  2. **sectionFilters** - Array com filtros específicos para CADA seção (mesma ordem que sectionLabels):
-     - **⚠️ CRÍTICO: Use APENAS estas palavras**: nome, email, telefone, grupo, curso, instituição, atividades
-     - **⚠️ NUNCA use**: name, phone, groupNames, coordinatorEmail, organizationsAndCourses
-     - **⚠️ String vazia "" = todos os dados** daquela seção
-     - Exemplos:
-       * "meus dados e lista de estudantes" → sectionFilters: ["", ""]
-       * "email dos profissionais" → sectionFilters: ["email"]
-       * "meu email, grupos e dados dos estudantes" → sectionFilters: ["email, grupos", ""]
+2. **sectionFilters**: Filtros por seção
+   - ⚠️ Use APENAS: nome, email, telefone, grupo, curso, instituição
+   - ⚠️ NUNCA: name, phone, groupNames, coordinatorEmail
+   - String vazia "" = todos os dados
+   - Múltiplos campos: separe com vírgula ("nome, email, grupo")
 
 **RESPOSTA APÓS GERAR RELATÓRIO**: Retorne APENAS o link de download, sem texto adicional formatado.
-  - ✅ CORRETO: "Pronto! Seu relatório está disponível: [link]"
-  - ❌ INCORRETO: "Seus profissionais: • Nome: ... • Email: ... O PDF está disponível: [link]"
-  - NÃO repita os dados em formato de texto se já gerou o PDF - apenas retorne o link!
+
+- ✅ CORRETO: "Pronto! Seu relatório está disponível: [link]"
+- ❌ INCORRETO: "Seus profissionais: • Nome: ... • Email: ... O PDF está disponível: [link]"
+- NÃO repita os dados em formato de texto se já gerou o PDF - apenas retorne o link!
 
 **Para pedidos de "lista" ou "mostre" sem mencionar arquivo** → retorne como texto formatado (não use generateReport)
 

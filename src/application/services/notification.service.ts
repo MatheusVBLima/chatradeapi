@@ -130,19 +130,19 @@ export class NotificationService {
       });
     }
 
-    // Matheus
-    const matheusNome = process.env.ATENDENTE_MATHEUS_NOME;
-    const matheusTelefone = process.env.ATENDENTE_MATHEUS_TELEFONE;
-    const matheusUnivs = process.env.ATENDENTE_MATHEUS_UNIVERSIDADES;
+    // Matheus (SEU_NOME)
+    const seuNomeNome = process.env.ATENDENTE_SEU_NOME_NOME;
+    const seuNomeTelefone = process.env.ATENDENTE_SEU_NOME_TELEFONE;
+    const seuNomeUnivs = process.env.ATENDENTE_SEU_NOME_UNIVERSIDADES;
 
-    if (matheusNome && matheusTelefone && matheusUnivs) {
-      const matheusUniversidades = matheusUnivs.split(',').map((u) => u.trim());
-      matheusUniversidades.forEach((univ) => {
+    if (seuNomeNome && seuNomeTelefone && seuNomeUnivs) {
+      const seuNomeUniversidades = seuNomeUnivs.split(',').map((u) => u.trim());
+      seuNomeUniversidades.forEach((univ) => {
         if (!config[univ]) {
           config[univ] = {
-            nome: matheusNome,
-            telefone: matheusTelefone,
-            universidades: matheusUniversidades,
+            nome: seuNomeNome,
+            telefone: seuNomeTelefone,
+            universidades: seuNomeUniversidades,
           };
         }
       });
@@ -156,21 +156,10 @@ export class NotificationService {
    */
   private getAtendentesTeste(): Record<string, AtendenteConfig> {
     return {
-      'Wyden Unifavip': {
-        nome: 'Teste Local',
-        telefone: '5581996364880',
-        universidades: [
-          'Wyden Unifavip',
-          'Centro Universitário Tabosa de Almeida ASCES-UNITA',
-        ],
-      },
       'Centro Universitário Tabosa de Almeida ASCES-UNITA': {
         nome: 'Teste Local',
         telefone: '5581996364880',
-        universidades: [
-          'Wyden Unifavip',
-          'Centro Universitário Tabosa de Almeida ASCES-UNITA',
-        ],
+        universidades: ['Centro Universitário Tabosa de Almeida ASCES-UNITA'],
       },
       'Prefeitura de Caruaru': {
         nome: 'Maria Santos',
