@@ -136,6 +136,18 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   ATENDENTE_VITORIA_UNIVERSIDADES?: string;
+
+  @IsString()
+  @IsOptional()
+  ATENDENTE_MATHEUS_NOME?: string;
+
+  @IsString()
+  @IsOptional()
+  ATENDENTE_MATHEUS_TELEFONE?: string;
+
+  @IsString()
+  @IsOptional()
+  ATENDENTE_MATHEUS_UNIVERSIDADES?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

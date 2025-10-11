@@ -13,7 +13,7 @@ async function testarFluxoCompleto() {
     let response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: 'Oi',
       state: null,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
@@ -25,7 +25,7 @@ async function testarFluxoCompleto() {
     response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: '1',
       state: state,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
@@ -37,52 +37,70 @@ async function testarFluxoCompleto() {
     response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: '98765432100',
       state: state,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
     state = response.data.nextState;
     console.log('');
 
-    // 4. Escolher "Como fazer meu cadastro"
-    console.log('4️⃣ Escolhendo "Como fazer meu cadastro"...');
+    // 4. Informar telefone (validação CPF + telefone)
+    console.log(
+      '4️⃣ Informando telefone para autenticação (vinculado ao CPF)...',
+    );
+    response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
+      message: '11999999999',
+      state: state,
+      environment: 'web',
+    });
+
+    console.log('Bot:', response.data.response);
+    state = response.data.nextState;
+    console.log('');
+
+    // 5. Escolher "Como fazer meu cadastro"
+    console.log('5️⃣ Escolhendo "Como fazer meu cadastro"...');
     response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: '1',
       state: state,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
     state = response.data.nextState;
     console.log('');
 
-    // 5. Escolher "Não, preciso de mais ajuda"
-    console.log('5️⃣ Escolhendo "Não, preciso de mais ajuda"...');
+    // 6. Escolher "Não, preciso de mais ajuda"
+    console.log('6️⃣ Escolhendo "Não, preciso de mais ajuda"...');
     response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: '2',
       state: state,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
     state = response.data.nextState;
     console.log('');
 
-    // 6. Informar telefone
-    console.log('6️⃣ Informando telefone...');
+    // 7. Informar telefone para transferência
+    console.log('7️⃣ Informando telefone para transferência ao atendente...');
     response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
       message: '81996364880',
       state: state,
-      channel: 'whatsapp'
+      environment: 'web',
     });
 
     console.log('Bot:', response.data.response);
     console.log('');
 
-    console.log('✅ Teste concluído! Verifique se você recebeu a notificação no WhatsApp.');
-
+    console.log(
+      '✅ Teste concluído! Verifique se você recebeu a notificação no WhatsApp.',
+    );
   } catch (error) {
-    console.error('❌ Erro durante o teste:', error.response?.data || error.message);
+    console.error(
+      '❌ Erro durante o teste:',
+      error.response?.data || error.message,
+    );
   }
 }
 

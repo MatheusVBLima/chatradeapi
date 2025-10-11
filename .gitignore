@@ -218,3 +218,4 @@ TWILIO-SETUP.md
 ZAPI-SETUP.md
 
 docs/*
+cli-tests/*
