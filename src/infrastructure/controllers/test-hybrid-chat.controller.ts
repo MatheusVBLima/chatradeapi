@@ -93,8 +93,8 @@ Diferenças do /chat/hybrid:
     @Body() request: TestHybridChatRequestDto,
   ): Promise<HybridChatResponseDto> {
     try {
-      this.logger.log(`/chat/test_hybrid called - message: ${request.message}`);
-      const result = await this.handle(request.message, request.state || null);
+      this.logger.log(`/chat/test_hybrid called - message: ${request.message}, environment: ${request.environment}`);
+      const result = await this.handle(request.message, request.state || null, request.environment);
 
       return {
         response: result.response,
@@ -114,8 +114,14 @@ Diferenças do /chat/hybrid:
   private async handle(
     message: string,
     state: TestHybridChatState | null,
+    environment: ChatEnvironment,
   ): Promise<{ response: string; nextState: TestHybridChatState | null }> {
     const currentState = state?.currentState || TestHybridChatFlowState.START;
+
+    // Store environment in state for use across handlers
+    if (state) {
+      state.data.environment = environment;
+    }
 
     switch (currentState) {
       case TestHybridChatFlowState.START:
@@ -734,9 +740,12 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
         },
       };
 
+      // Use environment from state (passed from request)
+      const environment = state.data.environment || ChatEnvironment.WEB;
+
       const result = await this.processTestOpenChatMessageUseCase.execute({
         message: message,
-        environment: ChatEnvironment.WEB,
+        environment: environment,
         phone: phone, // Passa o telefone já autenticado
         state: openChatState, // Passa o state com CPF autenticado
       });

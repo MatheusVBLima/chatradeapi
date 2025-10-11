@@ -12,6 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { ZapiService } from '../services/zapi.service';
 import axios from 'axios';
 
@@ -40,7 +41,10 @@ export class ZapiWebhookController {
   private sessions: Map<string, UserSession> = new Map();
   private readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
-  constructor(private readonly zapiService: ZapiService) {
+  constructor(
+    private readonly zapiService: ZapiService,
+    private readonly configService: ConfigService,
+  ) {
     // Clean expired sessions every 10 minutes
     setInterval(() => this.cleanExpiredSessions(), 10 * 60 * 1000);
   }
@@ -233,12 +237,17 @@ Este endpoint gerencia sessões em memória para manter contexto entre mensagens
     this.logger.log(`Calling test_hybrid endpoint: message="${message}", state=${state?.currentState || 'START'}`);
 
     try {
+      // Get environment from config (WEB or MOBILE)
+      const chatEnvironment = this.configService.get<string>('CHAT_ENVIRONMENT', 'MOBILE').toUpperCase();
+
+      this.logger.log(`Using CHAT_ENVIRONMENT: ${chatEnvironment}`);
+
       // Call internal test_hybrid endpoint
-      const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+      const baseUrl = this.configService.get<string>('BASE_URL', 'http://localhost:3001');
       const response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
         message: message,
         state: state,
-        environment: 'mobile',
+        environment: chatEnvironment,
       });
 
       this.logger.log(`test_hybrid response: success=${response.data.success}, nextState=${response.data.nextState?.currentState}`);
