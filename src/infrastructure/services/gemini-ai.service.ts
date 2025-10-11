@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from '@ai-sdk/google';
-import { streamText, type CoreMessage, type ToolCallPart } from 'ai';
+import { streamText, stepCountIs, type CoreMessage, type ToolCallPart } from 'ai';
 import type { LanguageModelV2 } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { User } from '../../domain/entities/user.entity';
@@ -162,6 +162,13 @@ export class GeminiAIService implements AIService {
       userMessage,
     );
 
+    // 💾 Salvar mensagem do usuário no cache para detecção de formato
+    this.cacheService.set(
+      this.getLastUserRequestCacheKey(actor.cpf),
+      userMessage,
+      600000, // 10 minutos
+    );
+
     // 1. Usar histórico passado ou buscar do cache como fallback
     const conversationKey = `conversation_${actor.cpf}`;
     let existingMessages: CoreMessage[] = [];
@@ -228,17 +235,18 @@ export class GeminiAIService implements AIService {
     let result;
     let usedFallback = false;
 
-    // 5. ✅ Usando maxSteps para permitir tool execution + text generation
+    // 5. ✅ Usando stopWhen para controlar multi-step tool execution + text generation
     try {
       console.log(
-        `[AI-SDK5] Calling streamText (v5 auto-handles tool execution)`,
+        `[AI-SDK5] Calling streamText with stopWhen (v5 auto-handles tool execution)`,
       );
       result = await streamText({
         model: this.primaryModel as any,
         system: systemPrompt,
         messages: trimmedMessages,
         tools: toolsWithExecute, // ✅ Tools com execute functions
-        temperature: 0,
+        stopWhen: stepCountIs(10), // ✅ Controla loop automático: até 10 steps (tool calls + text generation)
+        temperature: 0.1,
         maxRetries: 0,
         experimental_telemetry: { isEnabled: false },
         onStepFinish: ({
@@ -283,6 +291,7 @@ export class GeminiAIService implements AIService {
           system: systemPrompt,
           messages: trimmedMessages,
           tools: toolsWithExecute, // ✅ Tools com execute functions (AI SDK 5.0 executa automaticamente)
+          stopWhen: stepCountIs(10), // ✅ Controla loop automático no fallback também
           temperature: 0.1,
           maxRetries: 2,
           experimental_telemetry: { isEnabled: false },
@@ -353,241 +362,28 @@ export class GeminiAIService implements AIService {
     console.log(`[AI-SDK5] Complete text length: ${completeText.length}`);
     console.log(`[AI-SDK5] Complete text content: "${completeText}"`);
 
-    // Usar completeText se finalText estiver vazio
+    // ✅ Com stopWhen, AI SDK garante que sempre teremos texto final
+    // Usar completeText se finalText do stream estiver vazio
     const responseText = finalText || completeText;
 
+    // ⚠️ FALLBACK: Apenas se realmente não houver texto (erro inesperado)
     if (!responseText || responseText.trim().length === 0) {
       console.warn(
-        '[AI-SDK5] Empty response after tool execution! Making second call for final response...',
+        '[AI-SDK5] Empty response even with stopWhen! Using emergency fallback...',
       );
 
-      // ✅ CRITICAL FIX: result.steps é uma Promise, precisa fazer await!
       const steps = await result.steps;
-      console.log('[AI-SDK5] Steps resolved, length:', steps?.length || 0);
+      console.log('[AI-SDK5] Emergency fallback - Steps:', steps?.length || 0);
 
-      // ✅ SOLUÇÃO CORRETA PARA GEMINI: Adicionar mensagem do usuário pedindo formatação
-      try {
-        // Debug: verificar o que está em result.response
-        console.log(
-          '[AI-SDK5] result.response?.messages length:',
-          result.response?.messages?.length || 0,
-        );
-
-        // ✅ CORREÇÃO: Usar result.response.messages diretamente (já no formato correto)
-        // NÃO construir manualmente - AI SDK 5 já retorna no formato correto
-        const messagesWithToolResults = [
-          ...trimmedMessages,
-          ...(result.response?.messages || []),
-        ];
-
-        console.log(
-          '[AI-SDK5] Second call with',
-          messagesWithToolResults.length,
-          'messages (original:',
-          trimmedMessages.length,
-          '+ response:',
-          result.response?.messages?.length || 0,
-          ')',
-        );
-        console.log(
-          '[AI-SDK5] Response messages roles:',
-          (result.response?.messages || []).map((m: any) => m.role).join(', '),
-        );
-
-        // ✅ SOLUÇÃO PARA GEMINI: Adicionar mensagem do usuário solicitando resposta formatada
-        // (NÃO usar mensagem assistant vazia - isso é específico do Claude)
-        const messagesForCompletion = [
-          ...messagesWithToolResults,
-          {
-            role: 'user' as const,
-            content:
-              'Com base nos dados que você obteve, forneça uma resposta clara e formatada para minha pergunta.',
-          },
-        ];
-
-        // ⚠️ CORREÇÃO: Incluir tools na segunda chamada para permitir generateReport
-        // O Gemini pode precisar executar generateReport após buscar os dados
-        const secondResult = await streamText({
-          model: this.primaryModel as any,
-          system: systemPrompt,
-          messages: messagesForCompletion,
-          tools: toolsWithExecute, // ✅ Incluir tools para permitir generateReport (AI SDK 5.0 executa automaticamente)
-          temperature: 0.3, // ⚠️ Aumentar temperatura para forçar geração de texto ao invés de reexecutar tools
-          maxRetries: 0,
-          experimental_telemetry: { isEnabled: false },
-        });
-
-        console.log('[AI-SDK5] Second call with tools enabled');
-
-        let secondText = '';
-        for await (const part of secondResult.fullStream) {
-          if (part.type === 'text-delta') {
-            secondText += part.text;
-          }
-        }
-
-        console.log(
-          '[AI-SDK5] Second call generated text length:',
-          secondText.length,
-        );
-
-        if (secondText && secondText.length > 0) {
-          const secondResponse = await secondResult.response;
-          const messagesWithResponse = [
-            ...trimmedMessages,
-            ...(secondResponse?.messages || [
-              { role: 'assistant', content: secondText },
-            ]),
-          ];
-          return {
-            text: secondText,
-            messages: messagesWithResponse,
-          };
-        }
-
-        // ✅ CRÍTICO: Se segunda chamada não gerou texto, verificar se executou tools
-        console.log('[AI-SDK5] Second call did not generate text, checking for tool results...');
-        const secondSteps = await secondResult.steps;
-        console.log('[AI-SDK5] Second call steps:', secondSteps?.length || 0);
-
-        if (secondSteps && secondSteps.length > 0) {
-          const lastSecondStep: any = secondSteps[secondSteps.length - 1];
-
-          if (lastSecondStep?.toolResults && lastSecondStep.toolResults.length > 0) {
-            console.log('[AI-SDK5] Second call has tool results, building response...');
-
-            const secondToolResults = lastSecondStep.toolResults.map((tr: any) => ({
-              toolName: tr.toolName,
-              result: tr.result || tr.output || tr,
-            }));
-
-            // ⚠️ CRÍTICO: Verificar se usuário pediu relatório mas generateReport não foi executado
-            const userWantsReport = /relat[óo]rio|pdf|csv|txt|exportar|download|gerar arquivo|gere um pdf/i.test(userMessage);
-            const hasGenerateReportTool = secondToolResults.some((tr: any) => tr.toolName === 'generateReport');
-
-            if (userWantsReport && !hasGenerateReportTool) {
-              console.log('[AI-SDK5] User requested report but generateReport was not executed, making third call...');
-
-              // Fazer terceira chamada para forçar execução de generateReport
-              try {
-                const secondResponse = await secondResult.response;
-                const messagesAfterSecond = [
-                  ...trimmedMessages,
-                  ...(secondResponse?.messages || []),
-                ];
-
-                console.log('[AI-SDK5] Third call with', messagesAfterSecond.length, 'messages');
-
-                const thirdResult = await streamText({
-                  model: usedFallback ? (this.fallbackModel as any) : (this.primaryModel as any),
-                  system: systemPrompt,
-                  messages: messagesAfterSecond,
-                  tools: toolsWithExecute,
-                  temperature: 0.1,
-                  maxRetries: 2,
-                  experimental_telemetry: { isEnabled: false },
-                });
-
-                let thirdText = '';
-                for await (const part of thirdResult.fullStream) {
-                  if (part.type === 'text-delta') {
-                    thirdText += part.text;
-                  } else if (part.type === 'tool-call') {
-                    console.log(`[AI-SDK5-THIRD] Tool called: ${part.toolName}`);
-                  }
-                }
-
-                console.log('[AI-SDK5] Third call generated text length:', thirdText.length);
-
-                if (thirdText && thirdText.trim().length > 0) {
-                  console.log('[AI-SDK5] Using third call text response');
-                  const thirdResponse = await thirdResult.response;
-                  return {
-                    text: thirdText,
-                    messages: [
-                      ...messagesAfterSecond,
-                      ...(thirdResponse?.messages || []),
-                    ],
-                  };
-                }
-
-                // Se terceira chamada também não gerou texto, verificar tool results
-                const thirdSteps = await thirdResult.steps;
-                if (thirdSteps && thirdSteps.length > 0) {
-                  const lastThirdStep: any = thirdSteps[thirdSteps.length - 1];
-                  if (lastThirdStep?.toolResults && lastThirdStep.toolResults.length > 0) {
-                    console.log('[AI-SDK5] Third call has tool results');
-                    const thirdToolResults = lastThirdStep.toolResults.map((tr: any) => ({
-                      toolName: tr.toolName,
-                      result: tr.result || tr.output || tr,
-                    }));
-
-                    const thirdFallbackResponse = this.buildFallbackResponseFromToolResults(
-                      thirdToolResults,
-                      userMessage,
-                    );
-
-                    if (thirdFallbackResponse && thirdFallbackResponse.length > 10) {
-                      const thirdResponse = await thirdResult.response;
-                      return {
-                        text: thirdFallbackResponse,
-                        messages: [
-                          ...messagesAfterSecond,
-                          ...(thirdResponse?.messages || []),
-                          { role: 'assistant', content: thirdFallbackResponse },
-                        ],
-                      };
-                    }
-                  }
-                }
-              } catch (thirdCallError) {
-                console.error('[AI-SDK5] Third call failed:', thirdCallError);
-              }
-            }
-
-            const secondFallbackResponse = this.buildFallbackResponseFromToolResults(
-              secondToolResults,
-              userMessage,
-            );
-
-            if (secondFallbackResponse && secondFallbackResponse.length > 10) {
-              console.log('[AI-SDK5] Using second call fallback response');
-
-              const secondResponse = await secondResult.response;
-              const messagesWithToolResults = [
-                ...trimmedMessages,
-                ...(secondResponse?.messages || []),
-                { role: 'assistant', content: secondFallbackResponse },
-              ];
-
-              return {
-                text: secondFallbackResponse,
-                messages: messagesWithToolResults,
-              };
-            }
-          }
-        }
-      } catch (secondCallError) {
-        console.error('[AI-SDK5] Second call failed:', secondCallError);
-      }
-
-      // Usar buildFallbackResponseFromToolResults se tiver tool results
       if (steps && steps.length > 0) {
-        console.log('[AI-SDK5] Checking steps for tool results...');
         const lastStep: any = steps[steps.length - 1];
 
         if (lastStep?.toolResults && lastStep.toolResults.length > 0) {
-          console.log(
-            '[AI-SDK5] Found tool results, building fallback response',
-          );
-          console.log(
-            '[AI-SDK5] Raw toolResults structure:',
-            JSON.stringify(lastStep.toolResults).substring(0, 500),
-          );
+          console.log('[AI-SDK5] Building emergency fallback from tool results');
 
           const toolResults = lastStep.toolResults.map((tr: any) => ({
             toolName: tr.toolName,
-            result: tr.result || tr.output || tr, // Tentar diferentes propriedades
+            result: tr.result || tr.output || tr,
           }));
 
           const fallbackResponse = this.buildFallbackResponseFromToolResults(
@@ -596,24 +392,12 @@ export class GeminiAIService implements AIService {
           );
 
           if (fallbackResponse && fallbackResponse.length > 10) {
-            console.log('[AI-SDK5] Using fallback response');
-
-            // ✅ CRÍTICO: Construir histórico com tool calls + tool results
             const firstResponse = await result.response;
             const messagesWithToolResults = [
               ...trimmedMessages,
-              ...(firstResponse?.messages || []), // Tool calls + results da primeira chamada
+              ...(firstResponse?.messages || []),
               { role: 'assistant', content: fallbackResponse },
             ];
-
-            console.log(
-              '[AI-SDK5-FALLBACK] Messages with tool results:',
-              messagesWithToolResults.length,
-            );
-            console.log(
-              '[AI-SDK5-FALLBACK] Roles:',
-              messagesWithToolResults.map((m: any) => m.role).join(', '),
-            );
 
             return {
               text: fallbackResponse,
@@ -623,6 +407,7 @@ export class GeminiAIService implements AIService {
         }
       }
 
+      // Erro final
       console.error('[AI-SDK5] No fallback available, returning error message');
       const errorMsg =
         'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
@@ -1699,10 +1484,8 @@ export class GeminiAIService implements AIService {
     return combined.length > 0 ? combined : accumulatedItems.map((i) => i.data);
   }
 
-  private filterDataByFields(data: any, fieldsRequested: string): any {
-    if (!data) return data;
-
-    // Mapear campos solicitados para campos dos dados
+  // Mapear palavras em português para nomes de campos técnicos
+  private parseFieldsToSet(fieldsRequested: string): Set<string> {
     const fieldMapping: { [key: string]: string[] } = {
       nome: ['studentName', 'coordinatorName', 'name'],
       email: ['studentEmail', 'coordinatorEmail', 'email'],
@@ -1717,7 +1500,6 @@ export class GeminiAIService implements AIService {
       organizacao: ['organizationsAndCourses'],
     };
 
-    // Extrair campos solicitados da string
     const requestedLower = fieldsRequested.toLowerCase();
     const fieldsToInclude = new Set<string>();
 
@@ -1726,6 +1508,14 @@ export class GeminiAIService implements AIService {
         fields.forEach((field) => fieldsToInclude.add(field));
       }
     });
+
+    return fieldsToInclude;
+  }
+
+  private filterDataByFields(data: any, fieldsRequested: string): any {
+    if (!data) return data;
+
+    const fieldsToInclude = this.parseFieldsToSet(fieldsRequested);
 
     // Se não conseguir mapear campos, retornar dados originais
     if (fieldsToInclude.size === 0) {
@@ -2039,6 +1829,7 @@ export class GeminiAIService implements AIService {
       case 'generateReport':
         console.log('[REPORT-DEBUG] ========================================');
         console.log('[REPORT-DEBUG] generateReport tool execution started');
+        console.log('[REPORT-DEBUG] Full args received:', JSON.stringify(args, null, 2));
         console.log('[REPORT-DEBUG] CPF:', args.cpf);
         console.log('[REPORT-DEBUG] Format:', args.format);
 
@@ -2154,8 +1945,11 @@ export class GeminiAIService implements AIService {
 
         console.log('[REPORT-DEBUG] Proceeding with report generation...');
 
-        const { format: requestedFormat, fieldsRequested } = args;
-        const format = requestedFormat || 'pdf'; // Default to PDF if not specified
+        // 📄 Formato fixo: sempre PDF
+        const format = 'pdf';
+        const { sectionLabels, sectionFilters } = args;
+        console.log('[REPORT-DEBUG] Section labels:', sectionLabels);
+        console.log('[REPORT-DEBUG] Section filters:', sectionFilters);
 
         // Se tem múltiplos dados acumulados (ex: busca de estudante + preceptor), combinar
         let dataToUse = lastData;
@@ -2163,20 +1957,30 @@ export class GeminiAIService implements AIService {
           console.log(
             `[REPORT] Combining ${accumulatedData.length} accumulated data sources`,
           );
-          // Combinar dados de múltiplas tools
+          // Combinar dados de múltiplas tools - retorna array com cada fonte de dados
           dataToUse = this.combineAccumulatedData(accumulatedData);
           // Limpar cache acumulado após uso
           this.clearAccumulatedData(args.cpf);
         }
 
-        // Filtrar dados se campos específicos foram solicitados
+        // ✅ NOVA LÓGICA: Aplicar filtros por seção individualmente
         let dataToReport = dataToUse;
-        if (fieldsRequested) {
-          dataToReport = this.filterDataByFields(dataToUse, fieldsRequested);
+        if (sectionFilters && sectionFilters.length > 0 && Array.isArray(dataToUse)) {
+          console.log('[REPORT-DEBUG] Applying individual filters per section...');
+          dataToReport = dataToUse.map((item, index) => {
+            const filter = sectionFilters[index] || ''; // Filtro específico desta seção
+            if (filter && filter.trim().length > 0) {
+              console.log(`[REPORT-DEBUG] Section ${index}: filtering with "${filter}"`);
+              return this.filterSingleItem(item, this.parseFieldsToSet(filter));
+            } else {
+              console.log(`[REPORT-DEBUG] Section ${index}: no filter (all data)`);
+              return item; // Sem filtro = todos os dados
+            }
+          });
         }
 
         // Determinar título baseado no tipo de dados
-        let title = fieldsRequested ? `Dados Solicitados` : 'Dados';
+        let title = 'Dados';
         if (Array.isArray(dataToReport) && dataToReport.length > 0) {
           if (dataToReport[0].studentName && dataToReport[0].taskName) {
             title = 'Atividades em Andamento';
@@ -2201,7 +2005,11 @@ export class GeminiAIService implements AIService {
         }
 
         const cacheId = randomUUID();
-        this.cacheService.set(cacheId, { data: dataToReport, title });
+        this.cacheService.set(cacheId, {
+          data: dataToReport,
+          title,
+          sectionLabels: sectionLabels || null
+        });
         const downloadUrl = `${this.apiBaseUrl}/reports/from-cache/${cacheId}/${format}`;
         return { downloadUrl };
 

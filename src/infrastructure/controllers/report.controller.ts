@@ -88,15 +88,15 @@ O fluxo típico é:
     // It's good practice to remove the data from cache once it's used
     this.cacheService.delete(cacheId);
 
-    // Extrair dados e título
-    const { data, title = 'Dados' } = cachedData;
+    // Extrair dados, título e labels de seção
+    const { data, title = 'Dados', sectionLabels = null } = cachedData;
     const reportData = data || cachedData; // Compatibilidade com cache antigo
 
     const fileName = `relatorio_${title.toLowerCase().replace(/\s+/g, '_')}.${format}`;
 
     try {
       if (format === 'pdf') {
-        const pdfBuffer = await this.reportService.generatePdfReport(reportData, title);
+        const pdfBuffer = await this.reportService.generatePdfReport(reportData, title, sectionLabels);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
         res.send(pdfBuffer);

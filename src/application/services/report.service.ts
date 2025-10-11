@@ -193,12 +193,8 @@ export class ReportService {
         });
       }
 
-      // Adicionar separador visual entre registros (exceto último)
-      if (index < dataArray.length - 1) {
-        formatted += '\n---\n\n';
-      } else {
-        formatted += '\n';
-      }
+      // Adicionar espaçamento entre registros
+      formatted += '\n';
     });
 
     // Não adiciona rodapé no PDF
@@ -327,6 +323,7 @@ export class ReportService {
   public generatePdfReport(
     data: any,
     reportTitle: string = 'Dados',
+    sectionLabels: string[] | null = null,
   ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       try {
@@ -336,29 +333,80 @@ export class ReportService {
         doc.on('data', buffers.push.bind(buffers));
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
-        // Título centralizado
-        doc
-          .fontSize(20)
-          .font('Helvetica-Bold')
-          .text('RADE CHATBOT', { align: 'center' });
-        doc.moveDown(0.5);
-
-        // Linha decorativa
         const pageWidth =
           doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+        // ==================== CABEÇALHO ====================
+        // Título principal com cor azul
+        doc
+          .fontSize(24)
+          .font('Helvetica-Bold')
+          .fillColor('#2C3E50')
+          .text('Relatório RADE', { align: 'center' });
+        doc.moveDown(0.3);
+
+        // Linha decorativa dupla
         doc
           .moveTo(doc.page.margins.left, doc.y)
           .lineTo(doc.page.margins.left + pageWidth, doc.y)
+          .lineWidth(2)
+          .strokeColor('#3498DB')
           .stroke();
+        doc.moveDown(0.1);
+        doc
+          .moveTo(doc.page.margins.left, doc.y)
+          .lineTo(doc.page.margins.left + pageWidth, doc.y)
+          .lineWidth(0.5)
+          .strokeColor('#3498DB')
+          .stroke();
+
         doc.moveDown(1.5);
 
-        // Conteúdo formatado (alinhado à esquerda)
-        const content = this.formatDataForDisplayPDF(data, reportTitle);
-        doc.fontSize(11).font('Helvetica').text(content, { align: 'left' });
+        // ==================== CONTEÚDO COM SEÇÕES ====================
+        const dataArray = Array.isArray(data) ? data : [data];
 
-        // Rodapé - posicionar no final da página
+        // Se temos labels de seção geradas pela IA, usar abordagem personalizada
+        if (sectionLabels && sectionLabels.length > 0 && dataArray.length === sectionLabels.length) {
+          dataArray.forEach((item, index) => {
+            // Label da seção (gerada pela IA)
+            doc
+              .fontSize(14)
+              .font('Helvetica-Bold')
+              .fillColor('#34495E')
+              .text(sectionLabels[index], { continued: false });
+
+            // Linha fina abaixo do label
+            doc.moveDown(0.3);
+            const labelLineY = doc.y;
+            doc
+              .moveTo(doc.page.margins.left, labelLineY)
+              .lineTo(doc.page.margins.left + pageWidth / 2, labelLineY)
+              .lineWidth(1)
+              .strokeColor('#95A5A6')
+              .stroke();
+
+            doc.moveDown(0.5);
+
+            // Conteúdo da seção com fonte menor e cor mais escura
+            doc.fontSize(11).font('Helvetica').fillColor('#2C3E50');
+
+            // Formatar os dados do item
+            this.renderItemData(doc, item);
+
+            // Espaçamento entre seções
+            if (index < dataArray.length - 1) {
+              doc.moveDown(1.5);
+            }
+          });
+        } else {
+          // Fallback: usar formatação antiga
+          const content = this.formatDataForDisplayPDF(data, reportTitle);
+          doc.fontSize(11).font('Helvetica').fillColor('#2C3E50').text(content, { align: 'left' });
+        }
+
+        // ==================== RODAPÉ ====================
         const bottomMargin = 50;
-        const footerY = doc.page.height - bottomMargin - 20;
+        const footerY = doc.page.height - bottomMargin - 30;
 
         doc.y = footerY;
 
@@ -367,11 +415,12 @@ export class ReportService {
           .moveTo(doc.page.margins.left, doc.y)
           .lineTo(doc.page.margins.left + pageWidth, doc.y)
           .lineWidth(0.5)
+          .strokeColor('#BDC3C7')
           .stroke();
 
         doc.moveDown(0.5);
 
-        // Data de geração (centralizada e pequena)
+        // Data de geração (centralizada e cinza)
         const dataGeracao = new Date().toLocaleString('pt-BR', {
           day: '2-digit',
           month: '2-digit',
@@ -380,9 +429,9 @@ export class ReportService {
           minute: '2-digit',
         });
         doc
-          .fontSize(8)
+          .fontSize(9)
           .font('Helvetica')
-          .fillColor('#666666')
+          .fillColor('#7F8C8D')
           .text(`Gerado em ${dataGeracao}`, { align: 'center' });
 
         doc.end();
@@ -390,5 +439,65 @@ export class ReportService {
         reject(error);
       }
     });
+  }
+
+  // Método auxiliar para renderizar dados de um item individual
+  private renderItemData(doc: any, item: any): void {
+    const indent = '  ';
+
+    // Estudante/coordenador dados individuais
+    if (item.studentName || item.studentEmail) {
+      if (item.studentEmail) doc.text(`${indent}Email: ${item.studentEmail}`);
+      if (item.studentPhone) doc.text(`${indent}Telefone: ${item.studentPhone}`);
+      if (item.groupNames) {
+        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        doc.text(`${indent}Grupos: ${groups}`);
+      }
+      if (item.organizationsAndCourses) {
+        const orgs = Array.isArray(item.organizationsAndCourses)
+          ? item.organizationsAndCourses
+          : [item.organizationsAndCourses];
+        orgs.forEach((org) => {
+          if (org.organizationName) doc.text(`${indent}Instituição: ${org.organizationName}`);
+          if (org.courseNames) {
+            const courses = Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames;
+            doc.text(`${indent}Cursos: ${courses}`);
+          }
+        });
+      }
+    }
+    // Profissionais (preceptores, etc)
+    else if (item.name && item.email) {
+      doc.text(`${indent}Nome: ${item.name}`);
+      doc.text(`${indent}Email: ${item.email}`);
+      if (item.phone) doc.text(`${indent}Telefone: ${item.phone}`);
+      if (item.groupNames) {
+        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        doc.text(`${indent}Grupos: ${groups}`);
+      }
+    }
+    // Coordenador dados individuais
+    else if (item.coordinatorName || item.coordinatorEmail) {
+      if (item.coordinatorEmail) doc.text(`${indent}Email: ${item.coordinatorEmail}`);
+      if (item.coordinatorPhone) doc.text(`${indent}Telefone: ${item.coordinatorPhone}`);
+      if (item.groupNames) {
+        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        doc.text(`${indent}Grupos: ${groups}`);
+      }
+    }
+    // Fallback genérico
+    else {
+      Object.entries(item).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          // Formatar arrays como string simples, não JSON
+          const displayValue = Array.isArray(value)
+            ? value.join(', ')
+            : typeof value === 'object'
+              ? JSON.stringify(value)
+              : value;
+          doc.text(`${indent}${key}: ${displayValue}`);
+        }
+      });
+    }
   }
 }
