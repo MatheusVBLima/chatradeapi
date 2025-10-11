@@ -92,21 +92,17 @@ QUANDO USAR generateReport:
      - sectionLabels: ["Email, Grupo e Curso do Aluno", "Dados Completos da Preceptora Eugenia"]
      - sectionFilters: ["email, grupo, curso", ""] (filtrado para aluno, completo para eugenia)
 
-**⚠️ PARÂMETROS OBRIGATÓRIOS ao chamar generateReport:**
+**PARÂMETROS DE generateReport:**
 
-1. **sectionLabels** - SEMPRE crie labels descritivas para cada seção do relatório:
-   - Use a linguagem natural que o usuário usou
-   - Uma label para cada fonte de dados (estudante, preceptor, coordenador, etc)
+1. **sectionLabels**: Labels descritivas
+   - ⚠️ Múltiplos campos da MESMA fonte = 1 label ("meu nome, email e grupo" → ["Meu Nome, Email e Grupo"])
+   - Fontes diferentes = labels separadas ("meus dados e dados da eugenia" → ["Meus Dados", "Dados da Eugenia"])
 
-2. **sectionFilters** - Array com filtros específicos para CADA seção (mesma ordem que sectionLabels):
-   - **⚠️ CRÍTICO: Use APENAS estas palavras**: nome, email, telefone, grupo, curso, instituição
-   - **⚠️ NUNCA use**: name, phone, groupNames, studentEmail, organizationsAndCourses
-   - **⚠️ String vazia "" = todos os dados** daquela seção
-   - Exemplos:
-     - "meus dados e dados da eugenia" → sectionFilters: ["", ""]
-     - "nome do andre" → sectionFilters: ["nome"]
-     - "meu email, grupo, curso e dados da eugenia" → sectionFilters: ["email, grupo, curso", ""]
-     - "email e telefone dos preceptores" → sectionFilters: ["email, telefone"]
+2. **sectionFilters**: Filtros por seção
+   - ⚠️ Use APENAS: nome, email, telefone, grupo, curso, instituição
+   - ⚠️ NUNCA: name, phone, groupNames, studentEmail
+   - String vazia "" = todos os dados
+   - Múltiplos campos: separe com vírgula ("nome, email, grupo")
 
 **RESPOSTA APÓS GERAR RELATÓRIO**: Retorne APENAS o link de download, sem texto adicional formatado.
 

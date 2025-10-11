@@ -130,6 +130,24 @@ export class NotificationService {
       });
     }
 
+    // Matheus (SEU_NOME)
+    const seuNomeNome = process.env.ATENDENTE_SEU_NOME_NOME;
+    const seuNomeTelefone = process.env.ATENDENTE_SEU_NOME_TELEFONE;
+    const seuNomeUnivs = process.env.ATENDENTE_SEU_NOME_UNIVERSIDADES;
+
+    if (seuNomeNome && seuNomeTelefone && seuNomeUnivs) {
+      const seuNomeUniversidades = seuNomeUnivs.split(',').map((u) => u.trim());
+      seuNomeUniversidades.forEach((univ) => {
+        if (!config[univ]) {
+          config[univ] = {
+            nome: seuNomeNome,
+            telefone: seuNomeTelefone,
+            universidades: seuNomeUniversidades,
+          };
+        }
+      });
+    }
+
     return config;
   }
 
@@ -141,9 +159,7 @@ export class NotificationService {
       'Centro Universitário Tabosa de Almeida ASCES-UNITA': {
         nome: 'Teste Local',
         telefone: '5581996364880',
-        universidades: [
-          'Centro Universitário Tabosa de Almeida ASCES-UNITA',
-        ],
+        universidades: ['Centro Universitário Tabosa de Almeida ASCES-UNITA'],
       },
       'Prefeitura de Caruaru': {
         nome: 'Maria Santos',

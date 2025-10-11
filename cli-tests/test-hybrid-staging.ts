@@ -4,7 +4,7 @@ import * as readline from 'readline';
 // ========================================
 // 🔧 CONFIGURAÇÃO - MUDE APENAS A URL AQUI
 // ========================================
-const API_URL = 'http://localhost:3001/chat/open';
+const API_URL = 'http://localhost:3001/chat/hybrid';
 // Exemplos de URLs para testar:
 //
 // PRODUÇÃO (validação completa CPF+Telefone):

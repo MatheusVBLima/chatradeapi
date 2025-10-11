@@ -113,10 +113,9 @@ export class ReportService {
       }
       // Dados de estudante individual (formato API staging)
       else if (item.studentName || item.studentEmail) {
-        if (item.studentEmail)
-          formatted += `Email: ${item.studentEmail}\n`;
-        if (item.studentPhone)
-          formatted += `Telefone: ${item.studentPhone}\n`;
+        if (item.studentName) formatted += `Nome: ${item.studentName}\n`;
+        if (item.studentEmail) formatted += `Email: ${item.studentEmail}\n`;
+        if (item.studentPhone) formatted += `Telefone: ${item.studentPhone}\n`;
         if (item.groupNames)
           formatted += `Grupos: ${Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames}\n`;
         if (item.organizationsAndCourses) {
@@ -133,6 +132,8 @@ export class ReportService {
       }
       // Dados de coordenador individual
       else if (item.coordinatorName || item.coordinatorEmail) {
+        if (item.coordinatorName)
+          formatted += `Nome: ${item.coordinatorName}\n`;
         if (item.coordinatorEmail)
           formatted += `Email: ${item.coordinatorEmail}\n`;
         if (item.coordinatorPhone)
@@ -154,36 +155,23 @@ export class ReportService {
       // Dados genéricos (fallback)
       else {
         Object.entries(item).forEach(([key, value]) => {
-          // Melhorar a apresentação das chaves
-          let friendlyKey = key;
-          switch (key) {
-            case 'studentName':
-              friendlyKey = 'Nome';
-              break;
-            case 'studentEmail':
-              friendlyKey = 'Email';
-              break;
-            case 'studentPhone':
-              friendlyKey = 'Telefone';
-              break;
-            case 'coordinatorName':
-              friendlyKey = 'Nome';
-              break;
-            case 'coordinatorEmail':
-              friendlyKey = 'Email';
-              break;
-            case 'coordinatorPhone':
-              friendlyKey = 'Telefone';
-              break;
-            case 'groupNames':
-              friendlyKey = 'Grupos';
-              break;
-            case 'organizationsAndCourses':
-              friendlyKey = 'Instituições e Cursos';
-              break;
-            default:
-              friendlyKey = key;
-          }
+          // Tradutor de campos técnicos para português
+          const fieldTranslations: { [key: string]: string } = {
+            studentName: 'Nome',
+            coordinatorName: 'Nome',
+            name: 'Nome',
+            studentEmail: 'Email',
+            coordinatorEmail: 'Email',
+            email: 'Email',
+            studentPhone: 'Telefone',
+            coordinatorPhone: 'Telefone',
+            phone: 'Telefone',
+            groupNames: 'Grupos',
+            organizationsAndCourses: 'Instituições e Cursos',
+            cpf: 'CPF',
+          };
+
+          const friendlyKey = fieldTranslations[key] || key;
 
           if (typeof value === 'object' && value !== null) {
             formatted += `${indent}${friendlyKey}: ${JSON.stringify(value)}\n`;
@@ -366,7 +354,11 @@ export class ReportService {
         const dataArray = Array.isArray(data) ? data : [data];
 
         // Se temos labels de seção geradas pela IA, usar abordagem personalizada
-        if (sectionLabels && sectionLabels.length > 0 && dataArray.length === sectionLabels.length) {
+        if (
+          sectionLabels &&
+          sectionLabels.length > 0 &&
+          dataArray.length === sectionLabels.length
+        ) {
           dataArray.forEach((item, index) => {
             // Label da seção (gerada pela IA)
             doc
@@ -401,7 +393,11 @@ export class ReportService {
         } else {
           // Fallback: usar formatação antiga
           const content = this.formatDataForDisplayPDF(data, reportTitle);
-          doc.fontSize(11).font('Helvetica').fillColor('#2C3E50').text(content, { align: 'left' });
+          doc
+            .fontSize(11)
+            .font('Helvetica')
+            .fillColor('#2C3E50')
+            .text(content, { align: 'left' });
         }
 
         // ==================== RODAPÉ ====================
@@ -447,10 +443,14 @@ export class ReportService {
 
     // Estudante/coordenador dados individuais
     if (item.studentName || item.studentEmail) {
+      if (item.studentName) doc.text(`${indent}Nome: ${item.studentName}`);
       if (item.studentEmail) doc.text(`${indent}Email: ${item.studentEmail}`);
-      if (item.studentPhone) doc.text(`${indent}Telefone: ${item.studentPhone}`);
+      if (item.studentPhone)
+        doc.text(`${indent}Telefone: ${item.studentPhone}`);
       if (item.groupNames) {
-        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        const groups = Array.isArray(item.groupNames)
+          ? item.groupNames.join(', ')
+          : item.groupNames;
         doc.text(`${indent}Grupos: ${groups}`);
       }
       if (item.organizationsAndCourses) {
@@ -458,9 +458,12 @@ export class ReportService {
           ? item.organizationsAndCourses
           : [item.organizationsAndCourses];
         orgs.forEach((org) => {
-          if (org.organizationName) doc.text(`${indent}Instituição: ${org.organizationName}`);
+          if (org.organizationName)
+            doc.text(`${indent}Instituição: ${org.organizationName}`);
           if (org.courseNames) {
-            const courses = Array.isArray(org.courseNames) ? org.courseNames.join(', ') : org.courseNames;
+            const courses = Array.isArray(org.courseNames)
+              ? org.courseNames.join(', ')
+              : org.courseNames;
             doc.text(`${indent}Cursos: ${courses}`);
           }
         });
@@ -472,30 +475,72 @@ export class ReportService {
       doc.text(`${indent}Email: ${item.email}`);
       if (item.phone) doc.text(`${indent}Telefone: ${item.phone}`);
       if (item.groupNames) {
-        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        const groups = Array.isArray(item.groupNames)
+          ? item.groupNames.join(', ')
+          : item.groupNames;
         doc.text(`${indent}Grupos: ${groups}`);
       }
     }
     // Coordenador dados individuais
     else if (item.coordinatorName || item.coordinatorEmail) {
-      if (item.coordinatorEmail) doc.text(`${indent}Email: ${item.coordinatorEmail}`);
-      if (item.coordinatorPhone) doc.text(`${indent}Telefone: ${item.coordinatorPhone}`);
+      if (item.coordinatorName)
+        doc.text(`${indent}Nome: ${item.coordinatorName}`);
+      if (item.coordinatorEmail)
+        doc.text(`${indent}Email: ${item.coordinatorEmail}`);
+      if (item.coordinatorPhone)
+        doc.text(`${indent}Telefone: ${item.coordinatorPhone}`);
       if (item.groupNames) {
-        const groups = Array.isArray(item.groupNames) ? item.groupNames.join(', ') : item.groupNames;
+        const groups = Array.isArray(item.groupNames)
+          ? item.groupNames.join(', ')
+          : item.groupNames;
         doc.text(`${indent}Grupos: ${groups}`);
+      }
+      if (item.organizationsAndCourses) {
+        const orgs = Array.isArray(item.organizationsAndCourses)
+          ? item.organizationsAndCourses
+          : [item.organizationsAndCourses];
+        orgs.forEach((org) => {
+          if (org.organizationName)
+            doc.text(`${indent}Instituição: ${org.organizationName}`);
+          if (org.courseNames) {
+            const courses = Array.isArray(org.courseNames)
+              ? org.courseNames.join(', ')
+              : org.courseNames;
+            doc.text(`${indent}Cursos: ${courses}`);
+          }
+        });
       }
     }
     // Fallback genérico
     else {
+      // Tradutor de campos técnicos para português
+      const fieldTranslations: { [key: string]: string } = {
+        studentName: 'Nome',
+        coordinatorName: 'Nome',
+        name: 'Nome',
+        studentEmail: 'Email',
+        coordinatorEmail: 'Email',
+        email: 'Email',
+        studentPhone: 'Telefone',
+        coordinatorPhone: 'Telefone',
+        phone: 'Telefone',
+        groupNames: 'Grupos',
+        organizationsAndCourses: 'Instituições e Cursos',
+        cpf: 'CPF',
+      };
+
       Object.entries(item).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
+          // Traduzir nome do campo
+          const friendlyKey = fieldTranslations[key] || key;
+
           // Formatar arrays como string simples, não JSON
           const displayValue = Array.isArray(value)
             ? value.join(', ')
             : typeof value === 'object'
               ? JSON.stringify(value)
               : value;
-          doc.text(`${indent}${key}: ${displayValue}`);
+          doc.text(`${indent}${friendlyKey}: ${displayValue}`);
         }
       });
     }

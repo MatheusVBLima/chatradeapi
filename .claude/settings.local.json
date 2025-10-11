@@ -71,7 +71,9 @@
       "Bash(NODE_ENV=staging npm run test:e2e)",
       "Bash(dir:*)",
       "Bash(cat:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Read(//d/Web Workspace/Freela/adasi/**)",
+      "Bash(cd d:/Web Workspace/Freela/adasi/chatbot-api)"
     ],
     "deny": []
   }

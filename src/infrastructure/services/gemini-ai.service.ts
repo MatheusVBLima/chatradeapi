@@ -1,7 +1,12 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from '@ai-sdk/google';
-import { streamText, stepCountIs, type CoreMessage, type ToolCallPart } from 'ai';
+import {
+  streamText,
+  stepCountIs,
+  type CoreMessage,
+  type ToolCallPart,
+} from 'ai';
 import type { LanguageModelV2 } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { User } from '../../domain/entities/user.entity';
@@ -379,7 +384,9 @@ export class GeminiAIService implements AIService {
         const lastStep: any = steps[steps.length - 1];
 
         if (lastStep?.toolResults && lastStep.toolResults.length > 0) {
-          console.log('[AI-SDK5] Building emergency fallback from tool results');
+          console.log(
+            '[AI-SDK5] Building emergency fallback from tool results',
+          );
 
           const toolResults = lastStep.toolResults.map((tr: any) => ({
             toolName: tr.toolName,
@@ -1487,6 +1494,7 @@ export class GeminiAIService implements AIService {
   // Mapear palavras em português para nomes de campos técnicos
   private parseFieldsToSet(fieldsRequested: string): Set<string> {
     const fieldMapping: { [key: string]: string[] } = {
+      // Palavras em português
       nome: ['studentName', 'coordinatorName', 'name'],
       email: ['studentEmail', 'coordinatorEmail', 'email'],
       telefone: ['studentPhone', 'coordinatorPhone', 'phone'],
@@ -1498,6 +1506,17 @@ export class GeminiAIService implements AIService {
       instituicao: ['organizationsAndCourses'],
       organização: ['organizationsAndCourses'],
       organizacao: ['organizationsAndCourses'],
+      // Nomes técnicos diretos (que a IA pode enviar)
+      studentname: ['studentName'],
+      coordinatorname: ['coordinatorName'],
+      studentemail: ['studentEmail'],
+      coordinatoremail: ['coordinatorEmail'],
+      studentphone: ['studentPhone'],
+      coordinatorphone: ['coordinatorPhone'],
+      groupnames: ['groupNames'],
+      organizationsandcourses: ['organizationsAndCourses'],
+      name: ['studentName', 'coordinatorName', 'name'],
+      phone: ['studentPhone', 'coordinatorPhone', 'phone'],
     };
 
     const requestedLower = fieldsRequested.toLowerCase();
@@ -1508,6 +1527,10 @@ export class GeminiAIService implements AIService {
         fields.forEach((field) => fieldsToInclude.add(field));
       }
     });
+
+    console.log(
+      `[PARSE-FIELDS] Input: "${fieldsRequested}" → Output: [${Array.from(fieldsToInclude).join(', ')}]`,
+    );
 
     return fieldsToInclude;
   }
@@ -1829,7 +1852,10 @@ export class GeminiAIService implements AIService {
       case 'generateReport':
         console.log('[REPORT-DEBUG] ========================================');
         console.log('[REPORT-DEBUG] generateReport tool execution started');
-        console.log('[REPORT-DEBUG] Full args received:', JSON.stringify(args, null, 2));
+        console.log(
+          '[REPORT-DEBUG] Full args received:',
+          JSON.stringify(args, null, 2),
+        );
         console.log('[REPORT-DEBUG] CPF:', args.cpf);
         console.log('[REPORT-DEBUG] Format:', args.format);
 
@@ -1965,18 +1991,73 @@ export class GeminiAIService implements AIService {
 
         // ✅ NOVA LÓGICA: Aplicar filtros por seção individualmente
         let dataToReport = dataToUse;
-        if (sectionFilters && sectionFilters.length > 0 && Array.isArray(dataToUse)) {
-          console.log('[REPORT-DEBUG] Applying individual filters per section...');
-          dataToReport = dataToUse.map((item, index) => {
-            const filter = sectionFilters[index] || ''; // Filtro específico desta seção
-            if (filter && filter.trim().length > 0) {
-              console.log(`[REPORT-DEBUG] Section ${index}: filtering with "${filter}"`);
-              return this.filterSingleItem(item, this.parseFieldsToSet(filter));
+        if (sectionFilters && sectionFilters.length > 0) {
+          console.log('[REPORT-DEBUG] Applying filters...');
+
+          // Se não é array, transformar em array para processar
+          const dataArray = Array.isArray(dataToUse) ? dataToUse : [dataToUse];
+
+          // Se há múltiplos filtros e apenas 1 item, combinar todos os filtros em um só
+          if (dataArray.length === 1 && sectionFilters.length > 1) {
+            console.log(
+              '[REPORT-DEBUG] Single item with multiple filters - combining filters',
+            );
+            const allFields = new Set<string>();
+            sectionFilters.forEach((filter) => {
+              if (filter && filter.trim()) {
+                const fields = this.parseFieldsToSet(filter);
+                fields.forEach((f) => allFields.add(f));
+              }
+            });
+
+            // Se não temos campos (todos os filtros eram vazios), retornar tudo
+            if (allFields.size === 0) {
+              console.log(
+                '[REPORT-DEBUG] No specific fields requested - returning all data',
+              );
+              dataToReport = dataArray[0];
             } else {
-              console.log(`[REPORT-DEBUG] Section ${index}: no filter (all data)`);
-              return item; // Sem filtro = todos os dados
+              console.log(
+                '[REPORT-DEBUG] Combined fields:',
+                Array.from(allFields),
+              );
+              dataToReport = this.filterSingleItem(dataArray[0], allFields);
             }
-          });
+          }
+          // Se há múltiplos itens, aplicar filtro individual em cada
+          else if (dataArray.length > 1) {
+            console.log(
+              '[REPORT-DEBUG] Multiple items - applying filters individually',
+            );
+            dataToReport = dataArray.map((item, index) => {
+              const filter = sectionFilters[index] || '';
+              if (filter && filter.trim().length > 0) {
+                console.log(
+                  `[REPORT-DEBUG] Section ${index}: filtering with "${filter}"`,
+                );
+                return this.filterSingleItem(
+                  item,
+                  this.parseFieldsToSet(filter),
+                );
+              } else {
+                console.log(
+                  `[REPORT-DEBUG] Section ${index}: no filter (all data)`,
+                );
+                return item;
+              }
+            });
+          }
+          // Caso simples: 1 item, 1 filtro
+          else if (dataArray.length === 1 && sectionFilters.length === 1) {
+            const filter = sectionFilters[0];
+            if (filter && filter.trim()) {
+              console.log('[REPORT-DEBUG] Single item with single filter');
+              dataToReport = this.filterSingleItem(
+                dataArray[0],
+                this.parseFieldsToSet(filter),
+              );
+            }
+          }
         }
 
         // Determinar título baseado no tipo de dados
@@ -2005,11 +2086,15 @@ export class GeminiAIService implements AIService {
         }
 
         const cacheId = randomUUID();
-        this.cacheService.set(cacheId, {
-          data: dataToReport,
-          title,
-          sectionLabels: sectionLabels || null
-        });
+        this.cacheService.set(
+          cacheId,
+          {
+            data: dataToReport,
+            title,
+            sectionLabels: sectionLabels || null,
+          },
+          300000,
+        ); // 5 minutos de TTL para dar tempo de clicar no link
         const downloadUrl = `${this.apiBaseUrl}/reports/from-cache/${cacheId}/${format}`;
         return { downloadUrl };
 

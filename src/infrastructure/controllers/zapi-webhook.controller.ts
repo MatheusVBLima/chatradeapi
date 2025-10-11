@@ -9,7 +9,13 @@ import {
   Res,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiHeader,
+  ApiBody,
+} from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -105,7 +111,9 @@ Este endpoint gerencia sessões em memória para manter contexto entre mensagens
     @Res() res: Response,
   ): Promise<void> {
     try {
-      this.logger.log(`Received webhook: phone=${body.phone}, text=${body.text || body.message || body.body}`);
+      this.logger.log(
+        `Received webhook: phone=${body.phone}, text=${body.text || body.message || body.body}`,
+      );
 
       // Validate webhook (if Z-API provides signature validation)
       const isValid = this.validateWebhook(signature, req, body);
@@ -234,32 +242,46 @@ Este endpoint gerencia sessões em memória para manter contexto entre mensagens
     message: string,
     state: any,
   ): Promise<any> {
-    this.logger.log(`Calling test_hybrid endpoint: message="${message}", state=${state?.currentState || 'START'}`);
+    this.logger.log(
+      `Calling test_hybrid endpoint: message="${message}", state=${state?.currentState || 'START'}`,
+    );
 
     try {
-      // Get environment from config (WEB or MOBILE)
-      const chatEnvironment = this.configService.get<string>('CHAT_ENVIRONMENT', 'MOBILE').toUpperCase();
+      // WhatsApp sempre usa 'mobile' como padrão (comunicação via telefone)
+      const chatEnvironment = 'mobile';
 
-      this.logger.log(`Using CHAT_ENVIRONMENT: ${chatEnvironment}`);
+      this.logger.log(`Using WhatsApp environment: ${chatEnvironment}`);
 
       // Call internal hybrid endpoint (production)
-      const baseUrl = this.configService.get<string>('BASE_URL', 'http://localhost:3001');
-      const chatEndpoint = this.configService.get<string>('WEBHOOK_CHAT_ENDPOINT', '/chat/hybrid');
+      const baseUrl = this.configService.get<string>(
+        'BASE_URL',
+        'http://localhost:3001',
+      );
+      const chatEndpoint = this.configService.get<string>(
+        'WEBHOOK_CHAT_ENDPOINT',
+        '/chat/hybrid',
+      );
       const response = await axios.post(`${baseUrl}${chatEndpoint}`, {
         message: message,
         state: state,
         environment: chatEnvironment,
       });
 
-      this.logger.log(`test_hybrid response: success=${response.data.success}, nextState=${response.data.nextState?.currentState}`);
+      this.logger.log(
+        `test_hybrid response: success=${response.data.success}, nextState=${response.data.nextState?.currentState}`,
+      );
 
       return response.data;
     } catch (error) {
-      this.logger.error('Error calling test_hybrid:', error.response?.data || error.message);
+      this.logger.error(
+        'Error calling test_hybrid:',
+        error.response?.data || error.message,
+      );
 
       // Fallback response em caso de erro
       return {
-        response: 'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
+        response:
+          'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
         success: false,
         nextState: state || null,
       };
@@ -270,7 +292,8 @@ Este endpoint gerencia sessões em memória para manter contexto entre mensagens
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Health check do webhook Z-API',
-    description: 'Verifica se o sistema de webhooks está funcionando e retorna número de sessões ativas.',
+    description:
+      'Verifica se o sistema de webhooks está funcionando e retorna número de sessões ativas.',
   })
   @ApiResponse({
     status: 200,
