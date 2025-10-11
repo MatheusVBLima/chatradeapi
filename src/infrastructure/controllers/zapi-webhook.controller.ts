@@ -242,9 +242,10 @@ Este endpoint gerencia sessões em memória para manter contexto entre mensagens
 
       this.logger.log(`Using CHAT_ENVIRONMENT: ${chatEnvironment}`);
 
-      // Call internal test_hybrid endpoint
+      // Call internal hybrid endpoint (production)
       const baseUrl = this.configService.get<string>('BASE_URL', 'http://localhost:3001');
-      const response = await axios.post(`${baseUrl}/chat/test_hybrid`, {
+      const chatEndpoint = this.configService.get<string>('WEBHOOK_CHAT_ENDPOINT', '/chat/hybrid');
+      const response = await axios.post(`${baseUrl}${chatEndpoint}`, {
         message: message,
         state: state,
         environment: chatEnvironment,

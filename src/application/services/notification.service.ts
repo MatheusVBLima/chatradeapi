@@ -130,24 +130,6 @@ export class NotificationService {
       });
     }
 
-    // Matheus
-    const matheusNome = process.env.ATENDENTE_MATHEUS_NOME;
-    const matheusTelefone = process.env.ATENDENTE_MATHEUS_TELEFONE;
-    const matheusUnivs = process.env.ATENDENTE_MATHEUS_UNIVERSIDADES;
-
-    if (matheusNome && matheusTelefone && matheusUnivs) {
-      const matheusUniversidades = matheusUnivs.split(',').map((u) => u.trim());
-      matheusUniversidades.forEach((univ) => {
-        if (!config[univ]) {
-          config[univ] = {
-            nome: matheusNome,
-            telefone: matheusTelefone,
-            universidades: matheusUniversidades,
-          };
-        }
-      });
-    }
-
     return config;
   }
 
@@ -156,19 +138,10 @@ export class NotificationService {
    */
   private getAtendentesTeste(): Record<string, AtendenteConfig> {
     return {
-      'Wyden Unifavip': {
-        nome: 'Teste Local',
-        telefone: '5581996364880',
-        universidades: [
-          'Wyden Unifavip',
-          'Centro Universitário Tabosa de Almeida ASCES-UNITA',
-        ],
-      },
       'Centro Universitário Tabosa de Almeida ASCES-UNITA': {
         nome: 'Teste Local',
         telefone: '5581996364880',
         universidades: [
-          'Wyden Unifavip',
           'Centro Universitário Tabosa de Almeida ASCES-UNITA',
         ],
       },
