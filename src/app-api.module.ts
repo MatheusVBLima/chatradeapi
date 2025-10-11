@@ -58,7 +58,7 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ChatController,
     HybridChatController,
     TestChatController,
-    // TestHybridChatController, // DESABILITADO - usando HybridChatController de produção
+    TestHybridChatController,
     ReportController,
     MetricsController,
   ],

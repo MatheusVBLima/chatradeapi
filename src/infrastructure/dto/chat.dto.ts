@@ -53,7 +53,11 @@ export class BaseChatRequestDto {
  * DTO for open chat requests
  */
 export class OpenChatRequestDto extends BaseChatRequestDto {
-  // No additional fields needed for open chat
+  @ApiPropertyOptional({
+    description: 'Estado atual da conversa (para continuar conversa existente)',
+  })
+  @IsOptional()
+  state?: OpenChatState;
 }
 
 /**

@@ -14,7 +14,9 @@ export enum ChatFlowState {
   START = 'START',
   AWAITING_USER_TYPE = 'AWAITING_USER_TYPE',
   AWAITING_STUDENT_CPF = 'AWAITING_STUDENT_CPF',
+  AWAITING_STUDENT_PHONE = 'AWAITING_STUDENT_PHONE',
   AWAITING_COORDINATOR_CPF = 'AWAITING_COORDINATOR_CPF',
+  AWAITING_COORDINATOR_PHONE = 'AWAITING_COORDINATOR_PHONE',
   STUDENT_MENU = 'STUDENT_MENU',
   AWAITING_STUDENT_MENU_CHOICE = 'AWAITING_STUDENT_MENU_CHOICE',
   AWAITING_STUDENT_HELP_CHOICE = 'AWAITING_STUDENT_HELP_CHOICE',
@@ -74,9 +76,11 @@ export class ClosedChatFlow {
     state: ClosedChatState | null,
     user?: User,
     isTestMode?: boolean,
+    environment?: 'web' | 'mobile',
   ): Promise<FlowResponse> {
     // Sobrescrever SIMULATION_MODE se isTestMode for fornecido
-    this.currentSimulationMode = isTestMode !== undefined ? isTestMode : this.SIMULATION_MODE;
+    this.currentSimulationMode =
+      isTestMode !== undefined ? isTestMode : this.SIMULATION_MODE;
 
     const currentState = state?.currentState || ChatFlowState.START;
 
@@ -92,9 +96,17 @@ export class ClosedChatFlow {
         if (!state) return this.handleStart();
         return await this.handleStudentCpfResponse(message, state);
 
+      case ChatFlowState.AWAITING_STUDENT_PHONE:
+        if (!state) return this.handleStart();
+        return await this.handleStudentPhoneResponse(message, state);
+
       case ChatFlowState.AWAITING_COORDINATOR_CPF:
         if (!state) return this.handleStart();
         return await this.handleCoordinatorCpfResponse(message, state);
+
+      case ChatFlowState.AWAITING_COORDINATOR_PHONE:
+        if (!state) return this.handleStart();
+        return await this.handleCoordinatorPhoneResponse(message, state);
 
       case ChatFlowState.AWAITING_STUDENT_MENU_CHOICE:
         if (!state) return this.handleStart();
@@ -200,34 +212,42 @@ export class ClosedChatFlow {
     // Validar formato do CPF
     if (cpf.length !== 11) {
       return {
-        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        response:
+          'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
         nextState: state,
       };
     }
 
     // Buscar dados do estudante na API
     try {
-      const studentInfo = await this.virtualAssistanceService.getStudentInfo(cpf);
+      const studentInfo =
+        await this.virtualAssistanceService.getStudentInfo(cpf);
       const studentName = studentInfo.studentName || 'Estudante';
+      const environment = state.data.environment || 'web';
 
-      // Em modo teste/simulação, pedir telefone
-      if (this.currentSimulationMode) {
+      console.log(
+        `[CLOSED-CHAT] Environment: ${environment}, isTestMode: ${this.currentSimulationMode}`,
+      );
+
+      // Se ambiente WEB, pedir telefone para validação
+      if (environment === 'web') {
         return {
-          response: `Olá, ${studentName}! Para continuar, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):`,
+          response:
+            'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
           nextState: {
-            currentState: ChatFlowState.AWAITING_SIMULATION_PHONE,
+            currentState: ChatFlowState.AWAITING_STUDENT_PHONE,
             data: {
               ...state.data,
               studentCpf: cpf,
               cpf: cpf,
-              studentName,
               studentInfo,
             },
           },
         };
       }
 
-      // Em produção, ir direto para o menu
+      // Se ambiente MOBILE, Z-API detecta telefone automaticamente
+      // Ir direto para o menu (sem validação de telefone)
       return this.showStudentMenu({
         ...state.data,
         studentCpf: cpf,
@@ -255,34 +275,38 @@ Digite seu CPF novamente ou digite "voltar" para retornar ao menu:`,
     // Validar formato do CPF
     if (cpf.length !== 11) {
       return {
-        response: 'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
+        response:
+          'CPF inválido. Por favor, informe um CPF válido com 11 dígitos:',
         nextState: state,
       };
     }
 
     // Buscar dados do coordenador na API
     try {
-      const coordinatorInfo = await this.virtualAssistanceService.getCoordinatorInfo(cpf);
+      const coordinatorInfo =
+        await this.virtualAssistanceService.getCoordinatorInfo(cpf);
       const coordinatorName = coordinatorInfo.coordinatorName || 'Coordenador';
+      const environment = state.data.environment || 'web';
 
-      // Em modo teste/simulação, pedir telefone
-      if (this.currentSimulationMode) {
+      // Se ambiente WEB, pedir telefone para validação
+      if (environment === 'web') {
         return {
-          response: `Olá, ${coordinatorName}! Para continuar, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):`,
+          response:
+            'Ótimo! Agora, por favor, informe seu número de telefone (com DDD, exemplo: 11999999999):',
           nextState: {
-            currentState: ChatFlowState.AWAITING_SIMULATION_PHONE,
+            currentState: ChatFlowState.AWAITING_COORDINATOR_PHONE,
             data: {
               ...state.data,
               coordinatorCpf: cpf,
               cpf: cpf,
-              coordinatorName,
               coordinatorInfo,
             },
           },
         };
       }
 
-      // Em produção, ir direto para o menu
+      // Se ambiente MOBILE, Z-API detecta telefone automaticamente
+      // Ir direto para o menu (sem validação de telefone)
       return this.showCoordinatorMenu({
         ...state.data,
         coordinatorCpf: cpf,
@@ -296,6 +320,134 @@ Digite seu CPF novamente ou digite "voltar" para retornar ao menu:`,
         response: `CPF não encontrado no sistema. Por favor, verifique o CPF informado ou escolha a opção "3 - Ainda não sou usuário" no menu inicial.
 
 Digite seu CPF novamente ou digite "voltar" para retornar ao menu:`,
+        nextState: state,
+      };
+    }
+  }
+
+  /**
+   * Valida telefone do estudante (ambiente WEB)
+   */
+  private async handleStudentPhoneResponse(
+    message: string,
+    state: ClosedChatState,
+  ): Promise<FlowResponse> {
+    const telefone = message.trim().replace(/\D/g, '');
+
+    // Validação básica de telefone
+    if (telefone.length < 10 || telefone.length > 11) {
+      return {
+        response:
+          'Número de telefone inválido. Por favor, informe um telefone válido com DDD (exemplo: 11999999999):',
+        nextState: state,
+      };
+    }
+
+    const cpf = state.data.studentCpf || state.data.cpf;
+
+    if (!cpf) {
+      return {
+        response:
+          'Erro interno: CPF não encontrado. Por favor, reinicie o atendimento.',
+        nextState: state,
+      };
+    }
+
+    // Validar CPF + telefone na API
+    try {
+      const studentInfo =
+        await this.virtualAssistanceService.getStudentInfo(cpf);
+      const studentPhone = studentInfo.studentPhone || '';
+
+      // Normalizar telefones para comparação
+      const normalizedApiPhone = studentPhone.replace(/\D/g, '');
+      const normalizedInputPhone = telefone;
+
+      if (normalizedApiPhone !== normalizedInputPhone) {
+        return {
+          response: `CPF ou telefone não conferem com nossos registros. Por favor, verifique os dados e tente novamente.
+
+Informe seu telefone novamente (com DDD):`,
+          nextState: state,
+        };
+      }
+
+      // Autenticado! Mostrar menu com nome
+      const studentName = studentInfo.studentName || 'Estudante';
+      return this.showStudentMenu({
+        ...state.data,
+        userPhone: telefone,
+        studentName,
+        studentInfo,
+      });
+    } catch (error) {
+      console.error('[CLOSED-CHAT] Erro ao validar telefone:', error);
+      return {
+        response: 'Erro ao validar seus dados. Por favor, tente novamente.',
+        nextState: state,
+      };
+    }
+  }
+
+  /**
+   * Valida telefone do coordenador (ambiente WEB)
+   */
+  private async handleCoordinatorPhoneResponse(
+    message: string,
+    state: ClosedChatState,
+  ): Promise<FlowResponse> {
+    const telefone = message.trim().replace(/\D/g, '');
+
+    // Validação básica de telefone
+    if (telefone.length < 10 || telefone.length > 11) {
+      return {
+        response:
+          'Número de telefone inválido. Por favor, informe um telefone válido com DDD (exemplo: 11999999999):',
+        nextState: state,
+      };
+    }
+
+    const cpf = state.data.coordinatorCpf || state.data.cpf;
+
+    if (!cpf) {
+      return {
+        response:
+          'Erro interno: CPF não encontrado. Por favor, reinicie o atendimento.',
+        nextState: state,
+      };
+    }
+
+    // Validar CPF + telefone na API
+    try {
+      const coordinatorInfo =
+        await this.virtualAssistanceService.getCoordinatorInfo(cpf);
+      const coordinatorPhone = coordinatorInfo.coordinatorPhone || '';
+
+      // Normalizar telefones para comparação
+      const normalizedApiPhone = coordinatorPhone.replace(/\D/g, '');
+      const normalizedInputPhone = telefone;
+
+      if (normalizedApiPhone !== normalizedInputPhone) {
+        return {
+          response: `CPF ou telefone não conferem com nossos registros. Por favor, verifique os dados e tente novamente.
+
+Informe seu telefone novamente (com DDD):`,
+          nextState: state,
+        };
+      }
+
+      // Autenticado! Mostrar menu com nome
+      const coordinatorName = coordinatorInfo.coordinatorName || 'Coordenador';
+      return this.showCoordinatorMenu({
+        ...state.data,
+        userPhone: telefone,
+        coordinatorName,
+        coordinatorInfo,
+      });
+    } catch (error) {
+      console.error('[CLOSED-CHAT] Erro ao validar telefone:', error);
+      return {
+        response: 'Erro ao validar seus dados. Por favor, tente novamente.',
         nextState: state,
       };
     }
@@ -675,8 +827,7 @@ O atendimento será encerrado agora. Aguarde o contato!`;
     } catch (error) {
       console.error('[CLOSED-CHAT] Erro na transferência:', error);
       return {
-        response:
-          'Erro interno na transferência. Tente novamente mais tarde.',
+        response: 'Erro interno na transferência. Tente novamente mais tarde.',
         nextState: { currentState: ChatFlowState.END, data: {} },
       };
     }
@@ -692,10 +843,7 @@ O atendimento será encerrado agora. Aguarde o contato!`;
       console.log(`[CLOSED-CHAT] Buscando dados para CPF: ${cpf}`);
       return null;
     } catch (error) {
-      console.error(
-        '[CLOSED-CHAT] Erro ao buscar dados do usuário:',
-        error,
-      );
+      console.error('[CLOSED-CHAT] Erro ao buscar dados do usuário:', error);
       return null;
     }
   }
@@ -895,8 +1043,11 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
   }
 
   private showStudentMenu(data: ClosedChatState['data']): FlowResponse {
+    const studentName = data.studentName || 'Estudante';
+    const greeting = `Olá, ${studentName}! Aqui estão as opções que posso te ajudar:`;
+
     return {
-      response: `Aqui estão as opções que posso te ajudar:
+      response: `${greeting}
 1 - Como fazer meu cadastro
 2 - Como agendar minhas atividades
 3 - Como iniciar e finalizar atividade
@@ -913,8 +1064,11 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
   }
 
   private showCoordinatorMenu(data: ClosedChatState['data']): FlowResponse {
+    const coordinatorName = data.coordinatorName || 'Coordenador';
+    const greeting = `Bem-vindo, ${coordinatorName}! Como posso ajudar hoje?`;
+
     return {
-      response: `Bem-vindo, coordenador! Como posso ajudar hoje?
+      response: `${greeting}
 1 - Como validar atividades
 2 - Como realizar avaliação
 3 - Como baixar aplicativo para preceptores
@@ -937,9 +1091,12 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
     stateData: any,
   ): Promise<FlowResponse> {
     try {
-      const cpf = stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf;
+      const cpf =
+        stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf;
 
-      console.log(`[CLOSED-CHAT-SIMULAÇÃO] Buscando dados reais para CPF: ${cpf}`);
+      console.log(
+        `[CLOSED-CHAT-SIMULAÇÃO] Buscando dados reais para CPF: ${cpf}`,
+      );
 
       // Buscar dados baseado no tipo de usuário escolhido
       let usuario: any;
@@ -982,7 +1139,8 @@ Responda APENAS com o nome EXATO da instituição da lista acima (copie e cole).
       }
 
       // Buscar atendente REAL para esta universidade
-      const atendente = this.notificationService.getAtendentePorUniversidade(universidadeReal);
+      const atendente =
+        this.notificationService.getAtendentePorUniversidade(universidadeReal);
 
       if (!atendente) {
         return {

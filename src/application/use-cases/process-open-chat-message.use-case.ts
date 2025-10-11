@@ -2,10 +2,9 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { AIService } from '../../domain/services/ai.service';
-import { User } from '../../domain/entities/user.entity';
-import { getVirtualAssistanceTools } from './ai-tools';
-// CoreTool removed in AI SDK v5 - using Record<string, any> for tools
+import { VirtualAssistanceService } from '../../domain/services/virtual-assistance.service';
 import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
+import { OpenChatFlow, OpenChatState } from '../../domain/flows/open-chat.flow';
 
 export interface ProcessOpenChatMessageRequest {
   message: string;
@@ -13,12 +12,14 @@ export interface ProcessOpenChatMessageRequest {
   phone?: string;
   email?: string;
   environment: ChatEnvironment;
+  state?: OpenChatState; // Adicionar state para fluxo conversacional
 }
 
 export interface ProcessOpenChatMessageResponse {
   response: string;
   success: boolean;
   error?: string;
+  nextState?: OpenChatState; // Retornar próximo estado
 }
 
 @Injectable()
@@ -26,56 +27,32 @@ export class ProcessOpenChatMessageUseCase {
   constructor(
     @Inject('UserRepository') private readonly userRepository: UserRepository,
     @Inject('AIService') private readonly aiService: AIService,
+    @Inject('VirtualAssistanceService')
+    private readonly virtualAssistanceService: VirtualAssistanceService,
     private readonly configService: ConfigService,
+    private readonly openChatFlow: OpenChatFlow,
   ) {}
 
   async execute(
     request: ProcessOpenChatMessageRequest,
   ): Promise<ProcessOpenChatMessageResponse> {
     try {
-      let actor: User | null = null;
-      if (request.userId) {
-        // First, try to find the user by ID. If not found, try finding by CPF.
-        // This makes the endpoint flexible for testing and future auth methods.
-        actor = await this.userRepository.findById(request.userId);
-        if (!actor) {
-          actor = await this.userRepository.findByCpf(request.userId);
-        }
-      } else if (request.phone) {
-        actor = await this.userRepository.findByPhone(request.phone);
-      } else if (request.email) {
-        actor = await this.userRepository.findByEmail(request.email);
-      }
-
-      if (!actor) {
-        return {
-          response:
-            'Desculpe, não consegui te identificar. Verifique se suas informações de acesso estão corretas.',
-          success: false,
-          error: 'Actor not found',
-        };
-      }
-
-      // 2. Select tools based on the actor's role
-      const availableTools = this.getToolsForRole(actor.role);
-
-      // 3. Let the AI service handle the tool-calling logic
-      console.log(
-        '[USE-CASE] About to call processToolCall with tools:',
-        Object.keys(availableTools),
-      );
-      const aiResult = await this.aiService.processToolCall(
-        actor,
+      // Usar o OpenChatFlow para gerenciar estados conversacionais
+      const flowResult = await this.openChatFlow.handle(
         request.message,
-        availableTools,
+        request.state || null,
+        request.phone,
+        false, // isTestMode = false (produção)
+        request.environment,
       );
 
       return {
-        response: aiResult.text,
+        response: flowResult.response,
         success: true,
+        nextState: flowResult.nextState,
       };
     } catch (error) {
-      console.error('Error processing chat message:', error);
+      console.error('[OPEN-CHAT-USE-CASE] Error processing chat message:', error);
       return {
         response:
           'Desculpe, ocorreu um erro interno. Tente novamente em alguns instantes.',
@@ -85,39 +62,4 @@ export class ProcessOpenChatMessageUseCase {
     }
   }
 
-  private getToolsForRole(
-    role: 'student' | 'coordinator',
-  ): Record<string, any> {
-    const tools = getVirtualAssistanceTools(this.configService);
-
-    const studentTools = {
-      getStudentsScheduledActivities: tools.getStudentsScheduledActivities,
-      getStudentsProfessionals: tools.getStudentsProfessionals,
-      getStudentInfo: tools.getStudentInfo,
-    };
-
-    const coordinatorTools = {
-      getCoordinatorsOngoingActivities: tools.getCoordinatorsOngoingActivities,
-      getCoordinatorsProfessionals: tools.getCoordinatorsProfessionals,
-      getCoordinatorsStudents: tools.getCoordinatorsStudents,
-      getCoordinatorInfo: tools.getCoordinatorInfo,
-    };
-
-    // Common tools available for everyone
-    const commonTools = {
-      findPersonByName: tools.findPersonByName,
-    };
-
-    // Add generateReport only if enabled
-    if ((tools as any).generateReport) {
-      (commonTools as any).generateReport = (tools as any).generateReport;
-    }
-
-    if (role === 'coordinator') {
-      // Coordinators can also use student tools to look up specific students
-      return { ...commonTools, ...studentTools, ...coordinatorTools };
-    }
-
-    return { ...commonTools, ...studentTools };
-  }
 }

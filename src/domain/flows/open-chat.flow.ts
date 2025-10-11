@@ -54,6 +54,7 @@ export class OpenChatFlow {
     state: OpenChatState | null,
     phone?: string,
     isTestMode?: boolean,
+    environment?: 'web' | 'mobile',
   ): Promise<FlowResponse> {
     // Sobrescrever SIMULATION_MODE se isTestMode for fornecido
     this.currentSimulationMode =
@@ -62,14 +63,14 @@ export class OpenChatFlow {
     const currentState = state?.currentState || OpenChatFlowState.START;
     const stateData = state?.data || {};
 
-    console.log(`[OPEN-CHAT] Estado: ${currentState}, Mensagem: ${message}`);
+    console.log(`[OPEN-CHAT] Estado: ${currentState}, Mensagem: ${message}, Environment: ${environment}`);
 
     switch (currentState) {
       case OpenChatFlowState.START:
         return this.handleStart();
 
       case OpenChatFlowState.AWAITING_CPF:
-        return this.handleCpfInput(message, stateData);
+        return this.handleCpfInput(message, stateData, environment);
 
       case OpenChatFlowState.AWAITING_PHONE:
         return this.handlePhoneInput(message, stateData);
@@ -97,6 +98,7 @@ Para começar, por favor informe seu CPF (apenas números):`,
   private async handleCpfInput(
     cpf: string,
     stateData: any,
+    environment?: 'web' | 'mobile',
   ): Promise<FlowResponse> {
     const cleanCpf = cpf.replace(/\D/g, '');
 
@@ -137,13 +139,12 @@ Digite seu CPF novamente ou digite "sair" para encerrar:`,
     }
 
     const nome = usuario.studentName || usuario.coordinatorName || 'Usuário';
+    const telefoneApi = usuario.studentPhone || usuario.coordinatorPhone || '';
 
-    // Se está em modo teste, pede telefone. Senão, vai direto para autenticado
-    if (this.currentSimulationMode) {
+    // Se ambiente WEB, SEMPRE pedir telefone para validação
+    if (environment === 'web') {
       return {
-        response: `Olá, ${nome}!
-
-Para continuar em modo de teste, por favor informe seu número de telefone com DDD (exemplo: 11999999999):`,
+        response: `Ótimo! Agora, por favor informe seu número de telefone com DDD (exemplo: 11999999999):`,
         nextState: {
           currentState: OpenChatFlowState.AWAITING_PHONE,
           data: {
@@ -152,12 +153,14 @@ Para continuar em modo de teste, por favor informe seu número de telefone com D
             userId: cleanCpf,
             role,
             userName: nome,
+            telefoneApi, // Salvar para validar depois
           },
         },
       };
     }
 
-    // Produção - vai direto para autenticado
+    // Se ambiente MOBILE, Z-API detecta telefone automaticamente
+    // Ir direto para autenticado
     return {
       response: `Olá, ${nome}! Você está autenticado.
 
@@ -193,8 +196,24 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
       };
     }
 
+    // Validar se o telefone informado confere com o da API
+    const telefoneApiNormalizado = (stateData.telefoneApi || '').replace(/\D/g, '');
+
+    if (telefoneApiNormalizado !== cleanPhone) {
+      return {
+        response: `CPF ou telefone não conferem com nossos registros. Por favor, verifique os dados e tente novamente.
+
+Informe seu telefone novamente (com DDD):`,
+        nextState: {
+          currentState: OpenChatFlowState.AWAITING_PHONE,
+          data: stateData,
+        },
+      };
+    }
+
+    // Autenticado com sucesso!
     return {
-      response: `Ótimo, ${stateData.userName}! Você está autenticado em modo de teste.
+      response: `Ótimo, ${stateData.userName}! Você está autenticado.
 
 Pode fazer suas perguntas sobre o sistema RADE!`,
       nextState: {

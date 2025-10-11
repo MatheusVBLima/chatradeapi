@@ -112,10 +112,18 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     @Body() request: HybridChatRequestDto,
   ): Promise<HybridChatResponseDto> {
     try {
+      this.logger.log(
+        `[PROD] /chat/hybrid called - message: ${request.message}, environment: ${request.environment}, state: ${request.state?.currentState || 'START'}`,
+      );
+
       const result = await this.handle(
         request.message,
         request.state || null,
         request.environment,
+      );
+
+      this.logger.log(
+        `[PROD] /chat/hybrid response - success: true, nextState: ${result.nextState?.currentState || 'null'}`,
       );
 
       return {
@@ -124,7 +132,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
         nextState: result.nextState,
       };
     } catch (error) {
-      this.logger.error('Error in hybrid chat:', error);
+      this.logger.error('[PROD] Error in hybrid chat:', error);
       return {
         response: 'Erro interno. Tente novamente mais tarde.',
         success: false,
@@ -649,12 +657,23 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
     }
 
     try {
-      // Use the existing AI chat functionality
+      // Use the existing AI chat functionality with authenticated state
       const result = await this.processOpenChatMessageUseCase.execute({
         message: message,
         userId: state.data.userCpf,
         phone: state.data.userPhone, // Passa o telefone já autenticado
         environment: ChatEnvironment.WEB,
+        state: state.data.openChatState || {
+          currentState: 'AUTHENTICATED',
+          data: {
+            cpf: state.data.userCpf || state.data.studentCpf || state.data.coordinatorCpf,
+            phone: state.data.userPhone,
+            userId: state.data.userCpf || state.data.studentCpf || state.data.coordinatorCpf,
+            role: state.data.userType,
+            userName: state.data.studentName || state.data.coordinatorName,
+            conversationHistory: state.data.conversationHistory || [],
+          },
+        },
       });
 
       // If the user is not found in the API, but was authenticated in hybrid flow,
@@ -685,7 +704,14 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
 
       return {
         response: fullResponse,
-        nextState: state,
+        nextState: {
+          currentState: HybridChatFlowState.AI_CHAT,
+          data: {
+            ...state.data,
+            openChatState: result.nextState, // Salvar o estado do OpenChatFlow
+            conversationHistory: result.nextState?.data?.conversationHistory || state.data.conversationHistory || [],
+          },
+        },
       };
     } catch (error) {
       return {
