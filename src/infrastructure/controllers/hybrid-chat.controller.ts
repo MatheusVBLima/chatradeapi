@@ -328,6 +328,15 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
       '6': 'https://rade.b-cdn.net/bot/videos/preencher-tce.mp4',
     };
 
+    const menuNames = {
+      '1': 'Como fazer meu cadastro',
+      '2': 'Como agendar minhas atividades',
+      '3': 'Como iniciar e finalizar atividade',
+      '4': 'Como fazer uma avaliação',
+      '5': 'Como justificar atividade perdida',
+      '6': 'Como preencher meu TCE',
+    };
+
     if (videoLinks[choice]) {
       const response = `Claro! Aqui está o vídeo sobre isso: ${videoLinks[choice]}
 
@@ -339,7 +348,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
         response,
         nextState: {
           currentState: HybridChatFlowState.AWAITING_STUDENT_HELP_CHOICE,
-          data: state.data,
+          data: { ...state.data, lastMenuOption: menuNames[choice] },
         },
       };
     }
@@ -419,6 +428,13 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
       '4': 'https://rade.b-cdn.net/bot/videos/gerar-qr-code.mp4',
     };
 
+    const menuNames = {
+      '1': 'Como validar atividades',
+      '2': 'Como realizar avaliação',
+      '3': 'Como baixar aplicativo para preceptores',
+      '4': 'Como gerar QR code',
+    };
+
     if (videoLinks[choice]) {
       const response = `Certo! Aqui está o vídeo com as instruções: ${videoLinks[choice]}
 
@@ -430,7 +446,7 @@ O vídeo foi útil ou você precisa de mais alguma ajuda?
         response,
         nextState: {
           currentState: HybridChatFlowState.AWAITING_COORDINATOR_HELP_CHOICE,
-          data: state.data,
+          data: { ...state.data, lastMenuOption: menuNames[choice] },
         },
       };
     }
@@ -724,8 +740,11 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     response: string;
     nextState: HybridChatState;
   } {
+    const studentName = data.studentName || 'Estudante';
+    const greeting = `Olá, ${studentName}! Aqui estão as opções que posso te ajudar:`;
+
     return {
-      response: `Aqui estão as opções que posso te ajudar:
+      response: `${greeting}
 1 - Como fazer meu cadastro
 2 - Como agendar minhas atividades
 3 - Como iniciar e finalizar atividade
@@ -746,8 +765,11 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     response: string;
     nextState: HybridChatState;
   } {
+    const coordinatorName = data.coordinatorName || 'Coordenador';
+    const greeting = `Olá, ${coordinatorName}! Como posso ajudar hoje?`;
+
     return {
-      response: `Bem-vindo, coordenador! Como posso ajudar hoje?
+      response: `${greeting}
 1 - Como validar atividades
 2 - Como realizar avaliação
 3 - Como baixar aplicativo para preceptores
@@ -836,6 +858,12 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
           contextoConversa,
         );
 
+      // 3.1. Formatar dados completos do usuário
+      const dadosFormatados = this.formatarDadosUsuarioParaAtendente(
+        dadosUsuario,
+        stateData.lastMenuOption,
+      );
+
       // 4. Enviar notificação para atendente
       const chamado = await this.notificationService.enviarNotificacaoChamado({
         telefoneUsuario: telefone,
@@ -845,6 +873,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
         cpfUsuario:
           stateData.studentCpf || stateData.coordinatorCpf || stateData.cpf,
         resumoConversa: resumoConversa,
+        dadosCompletos: dadosFormatados,
       });
 
       // 5. Resposta para o usuário
@@ -1078,6 +1107,8 @@ Informe seu telefone novamente (com DDD):`,
       ...state.data,
       userPhone: telefone,
       userToken: authResult.token,
+      studentName: authResult.userData?.studentName,
+      studentInfo: authResult.userData,
     });
   }
 
@@ -1121,6 +1152,67 @@ Informe seu telefone novamente (com DDD):`,
       ...state.data,
       userPhone: telefone,
       userToken: authResult.token,
+      coordinatorName: authResult.userData?.coordinatorName,
+      coordinatorInfo: authResult.userData,
     });
+  }
+
+  /**
+   * Formata dados do usuário para envio ao atendente
+   */
+  private formatarDadosUsuarioParaAtendente(
+    dadosUsuario: any,
+    ultimoMenu?: string,
+  ): string {
+    const nome =
+      dadosUsuario.studentName ||
+      dadosUsuario.coordinatorName ||
+      'Nome não disponível';
+    const email =
+      dadosUsuario.studentEmail ||
+      dadosUsuario.coordinatorEmail ||
+      'E-mail não disponível';
+    const telefone =
+      dadosUsuario.studentPhone ||
+      dadosUsuario.coordinatorPhone ||
+      'Telefone não disponível';
+
+    let dadosFormatados = `👤 DADOS DO USUÁRIO:\n`;
+    dadosFormatados += `Nome: ${nome}\n`;
+    dadosFormatados += `E-mail: ${email}\n`;
+    dadosFormatados += `Telefone: ${telefone}\n\n`;
+
+    // Grupos (se for estudante)
+    if (dadosUsuario.groupNames && dadosUsuario.groupNames.length > 0) {
+      dadosFormatados += `📚 GRUPOS:\n`;
+      dadosUsuario.groupNames.forEach((grupo: string) => {
+        dadosFormatados += `• ${grupo}\n`;
+      });
+      dadosFormatados += `\n`;
+    }
+
+    // Organizações e cursos
+    if (
+      dadosUsuario.organizationsAndCourses &&
+      dadosUsuario.organizationsAndCourses.length > 0
+    ) {
+      dadosFormatados += `🏫 INSTITUIÇÕES E CURSOS:\n`;
+      dadosUsuario.organizationsAndCourses.forEach((org: any) => {
+        dadosFormatados += `• ${org.organizationName}\n`;
+        if (org.courseNames && org.courseNames.length > 0) {
+          org.courseNames.forEach((curso: string) => {
+            dadosFormatados += `  - ${curso}\n`;
+          });
+        }
+      });
+      dadosFormatados += `\n`;
+    }
+
+    // Contexto da dificuldade
+    if (ultimoMenu) {
+      dadosFormatados += `❓ CONTEXTO:\nEncontrou dificuldades em: ${ultimoMenu}`;
+    }
+
+    return dadosFormatados;
   }
 }
