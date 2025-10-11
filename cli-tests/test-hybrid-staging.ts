@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as readline from 'readline';
 
 // Configuração
-const API_URL = 'http://localhost:3001/chat/test_hybrid';
+const API_URL = 'http://localhost:3001/chat/hybrid';
 
 interface TestState {
   currentState: string;
@@ -55,11 +55,6 @@ class InteractiveChatTester {
 
       // Exibe resposta do bot
       console.log(`\n💬 BOT: ${botResponse}\n`);
-
-      // Mostra estado atual (útil para debug)
-      if (this.state) {
-        console.log(`🔄 Estado: ${this.state.currentState}\n`);
-      }
 
     } catch (error) {
       if (axios.isAxiosError(error)) {

@@ -67,22 +67,23 @@ export class TestHybridChatController {
     private readonly geminiAiService: GeminiAIService,
   ) {}
 
-  @Post('test_hybrid')
+  @Post('hybrid')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Test: Chat híbrido com menu + IA (Mock Data)',
-    description: `Endpoint de teste para fluxo híbrido usando dados mockados.
+    summary: 'Chat híbrido com menu + IA',
+    description: `Endpoint principal para fluxo híbrido (menu-driven + AI assistance).
 
-Diferenças do /chat/hybrid:
-- Usa dados mockados em vez da API RADE
-- Sempre solicita telefone para validação
-- Adiciona prefixo [TESTE] nas mensagens
-- Útil para testar o fluxo completo sem acesso à API real`,
+Funcionalidades:
+- Fluxo guiado por menus para estudantes e coordenadores
+- Integração com IA para perguntas complexas
+- Autenticação via CPF + telefone
+- Transferência para atendentes humanos quando necessário
+- Suporte para novos usuários (ainda não cadastrados)`,
   })
   @ApiBody({ type: TestHybridChatRequestDto })
   @ApiResponse({
     status: 200,
-    description: 'Resposta do chatbot híbrido de teste',
+    description: 'Resposta do chatbot híbrido',
     type: HybridChatResponseDto,
   })
   @ApiResponse({
@@ -93,7 +94,7 @@ Diferenças do /chat/hybrid:
     @Body() request: TestHybridChatRequestDto,
   ): Promise<HybridChatResponseDto> {
     try {
-      this.logger.log(`/chat/test_hybrid called - message: ${request.message}, environment: ${request.environment}`);
+      this.logger.log(`/chat/hybrid called - message: ${request.message}, environment: ${request.environment}`);
       const result = await this.handle(request.message, request.state || null, request.environment);
 
       return {

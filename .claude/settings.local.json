@@ -70,7 +70,8 @@
       "Bash(NODE_ENV=staging npm run start:dev)",
       "Bash(NODE_ENV=staging npm run test:e2e)",
       "Bash(dir:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git restore:*)"
     ],
     "deny": []
   }

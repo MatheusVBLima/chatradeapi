@@ -47,7 +47,14 @@ export class ZapiService {
 
       console.log('[ZAPI-SERVICE] Sending with headers:', headers);
 
+      // 1. Mostrar indicador de "digitando..." antes de enviar a mensagem
+      await this.sendTypingIndicator(formattedPhone, true);
 
+      // 2. Simular um pequeno delay (500ms a 2s dependendo do tamanho da mensagem)
+      const typingDelay = Math.min(2000, Math.max(500, message.length * 20));
+      await this.delay(typingDelay);
+
+      // 3. Enviar a mensagem
       const response = await axios.post(
         `${this.baseUrl}/send-text`,
         {
@@ -56,6 +63,9 @@ export class ZapiService {
         },
         { headers }
       );
+
+      // 4. Remover indicador de "digitando..."
+      await this.sendTypingIndicator(formattedPhone, false);
 
       console.log('[ZAPI] Message sent successfully:', {
         status: response.status,
@@ -70,6 +80,39 @@ export class ZapiService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Envia indicador de "digitando..." (composing) ou remove
+   */
+  private async sendTypingIndicator(phone: string, isTyping: boolean): Promise<void> {
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Client-Token': this.clientToken,
+      };
+
+      await axios.post(
+        `${this.baseUrl}/send-presence`,
+        {
+          phone: phone,
+          status: isTyping ? 'composing' : 'available',
+        },
+        { headers }
+      );
+
+      console.log(`[ZAPI] Typing indicator ${isTyping ? 'enabled' : 'disabled'} for ${phone}`);
+    } catch (error) {
+      // Não lançar erro se falhar, é apenas um indicador visual
+      console.warn('[ZAPI] Failed to send typing indicator:', error.message);
+    }
+  }
+
+  /**
+   * Delay helper
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // Extract message data from Z-API webhook
