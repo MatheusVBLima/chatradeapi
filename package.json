@@ -6,9 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "node --max-old-space-size=2048 node_modules/.bin/nest build",
+    "build": "cross-env NODE_OPTIONS='--max-old-space-size=2048' npx @nestjs/cli build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "node --max-old-space-size=2048 node_modules/.bin/nest start",
+    "start": "cross-env NODE_OPTIONS='--max-old-space-size=2048' npx @nestjs/cli start",
     "start:dev": "cross-env NODE_ENV=staging npx nest start --watch",
     "start:dev:staging": "cross-env NODE_ENV=staging npx nest start --watch",
     "start:dev:prod": "cross-env NODE_ENV=production npx nest start --watch",
