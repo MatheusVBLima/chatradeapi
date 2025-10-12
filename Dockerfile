@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci && npm cache clean --force
 
 # Production stage
 FROM node:18-alpine AS production
@@ -32,9 +32,8 @@ COPY --chown=nodejs:nodejs . .
 # Build the application
 RUN npm run build
 
-# Remove dev dependencies and source files to reduce image size (keep healthcheck.js)
-RUN rm -rf src/ test/ *.md .env* package*.json tsconfig*.json nest-cli.json && \
-    npm prune --production
+# Remove dev dependencies and source files to reduce image size (keep healthcheck.js and package.json)
+RUN rm -rf src/ test/ *.md .env* tsconfig*.json nest-cli.json
 
 # Switch to non-root user
 USER nodejs
