@@ -14,11 +14,10 @@
 # Environment & Configuration
 # --------------------------------
 # Sensitive environment files
-.env*
-!.env.example
+
 
 # Ignore env files in root only (not in src/)
-/env*
+.env*
 
 # Keep template file
 !.env.example
@@ -60,16 +59,7 @@ tmp/
 # --------------------------------
 # Documentation & Notes
 # --------------------------------
-# Personal documentation files
-todo.md
-guide.md
-relatorio.md
-melhorias.md
-notas.md
-rascunho.md
-deploy.md
-ZAPI-SETUP.md
-README-DOCKER.md
+
 
 # Implementation planning docs folder (not for version control)
 !docs/
@@ -219,3 +209,5 @@ ZAPI-SETUP.md
 
 docs/*
 cli-tests/*
+
+.cursor/*

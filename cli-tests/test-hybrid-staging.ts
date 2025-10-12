@@ -4,18 +4,20 @@ import * as readline from 'readline';
 // ========================================
 // 🔧 CONFIGURAÇÃO - MUDE APENAS A URL AQUI
 // ========================================
-const API_URL = 'http://localhost:3001/chat/hybrid';
+const API_URL = 'http://216.238.123.241/chat/hybrid';
+// Use 'http://localhost:8080' se estiver usando túnel SSH
+// Use 'http://216.238.123.241' para acesso direto ao servidor
 // Exemplos de URLs para testar:
 //
 // PRODUÇÃO (validação completa CPF+Telefone):
-// - 'http://localhost:3001/chat/open'         → Chat aberto com IA (pede CPF + telefone)
-// - 'http://localhost:3001/chat/closed'       → Chat fechado (menu, pede CPF + telefone)
-// - 'http://localhost:3001/chat/hybrid'       → Chat híbrido (menu + IA, pede CPF + telefone)
+// - 'http://216.238.123.241/chat/open'         → Chat aberto com IA (pede CPF + telefone)
+// - 'http://216.238.123.241/chat/closed'       → Chat fechado (menu, pede CPF + telefone)
+// - 'http://216.238.123.241/chat/hybrid'       → Chat híbrido (menu + IA, pede CPF + telefone)
 //
 // TESTE (mock/staging, validação simplificada):
-// - 'http://localhost:3001/chat/test_open'    → Test open (IA)
-// - 'http://localhost:3001/chat/test_closed'  → Test closed (menu)
-// - 'http://localhost:3001/chat/test_hybrid'  → Test hybrid (menu + IA)
+// - 'http://216.238.123.241/chat/test_open'    → Test open (IA)
+// - 'http://216.238.123.241/chat/test_closed'  → Test closed (menu)
+// - 'http://216.238.123.241/chat/test_hybrid'  → Test hybrid (menu + IA)
 
 interface TestState {
   currentState: string;
