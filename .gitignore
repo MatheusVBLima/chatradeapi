@@ -61,9 +61,6 @@ tmp/
 # --------------------------------
 
 
-# Implementation planning docs folder (not for version control)
-!docs/
-
 # CLI test scripts folder (not for version control)
 !cli-tests/
 
@@ -207,7 +204,7 @@ TWILIO-SETUP.md
 
 ZAPI-SETUP.md
 
-docs/*
+
 cli-tests/*
 
 .cursor/*

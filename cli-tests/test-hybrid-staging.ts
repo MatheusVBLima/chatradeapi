@@ -4,7 +4,7 @@ import * as readline from 'readline';
 // ========================================
 // 🔧 CONFIGURAÇÃO - MUDE APENAS A URL AQUI
 // ========================================
-const API_URL = 'http://216.238.123.241/chat/hybrid';
+const API_URL = 'http://127.0.0.1:3001/chat/hybrid';
 // Use 'http://localhost:8080' se estiver usando túnel SSH
 // Use 'http://216.238.123.241' para acesso direto ao servidor
 // Exemplos de URLs para testar:

@@ -8,11 +8,16 @@ services:
       dockerfile: Dockerfile
     container_name: chatbot-api
     restart: unless-stopped
+    ports:
+      - '3001:3001'  # Expor porta para testes diretos
     env_file:
       - .env.production
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - HTTP_TIMEOUT=120000
+      - GEMINI_TIMEOUT=90000  # Timeout específico para Gemini
     networks:
       - chatbot-network
     healthcheck:
@@ -31,6 +36,11 @@ services:
       start_period: 40s
     volumes:
       - ./logs:/app/logs
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+        max-file: '5'
     depends_on:
       - nginx
 
@@ -51,6 +61,13 @@ services:
       - certbot_certs:/etc/letsencrypt
     networks:
       - chatbot-network
+    environment:
+      - NGINX_UPSTREAM_TIMEOUT=120s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
     command: ['nginx', '-g', 'daemon off;']
 
   # Certbot for SSL certificates
@@ -67,6 +84,11 @@ services:
 networks:
   chatbot-network:
     driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1450  # MTU reduzido para evitar problemas de fragmentação
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   certbot_data:
