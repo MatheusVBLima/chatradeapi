@@ -37,8 +37,10 @@ export class GeminiAIService implements AIService {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>(
       'GOOGLE_GENERATIVE_AI_API_KEY',
     );
-    this.primaryModel = google('gemini-2.5-flash-lite');
-    this.fallbackModel = google('gemini-2.0-flash'); // 2.0 não tem versão -lite na docs oficial
+    // ✅ PRIMÁRIO: 2.0-flash é mais estável para tool calling (fix para bug do 2.5-flash-lite)
+    this.primaryModel = google('gemini-2.0-flash');
+    // ✅ FALLBACK: 2.5-flash-lite (mais barato, mas tem bug conhecido com multi-step tools)
+    this.fallbackModel = google('gemini-2.5-flash-lite');
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl =
@@ -63,7 +65,7 @@ export class GeminiAIService implements AIService {
 
     // Try primary model first (sem retry interno - faremos nosso próprio fallback)
     try {
-      console.log('[AI] Attempting with primary model (gemini-2.5-flash-lite)');
+      console.log('[AI] Attempting with primary model (gemini-2.0-flash)');
       return await streamText({
         model: this.primaryModel as any,
         system,
@@ -118,13 +120,32 @@ export class GeminiAIService implements AIService {
     cpf: string,
   ): Record<string, any> {
     const { tool } = require('ai');
+    const { z } = require('zod');
     const toolsWithExecute: Record<string, any> = {};
 
     for (const [toolName, toolDef] of Object.entries(tools)) {
+      // ✅ FIX: Garantir que parameters sempre seja um z.object válido
+      // Gemini exige que parameters tenha type: "object"
+      let parameters = (toolDef as any).parameters;
+
+      // Se parameters não existe ou não é ZodObject, criar z.object({}) vazio
+      if (!parameters || !parameters._def || parameters._def.typeName !== 'ZodObject') {
+        console.warn(
+          `[AI-SDK5] Tool ${toolName} has invalid parameters, creating empty object`,
+        );
+        parameters = z.object({});
+      }
+
+      // Debug: Log da estrutura Zod ANTES de passar para tool()
+      if (toolName === 'findPersonByName') {
+        console.log(`[AI-SDK5] DEBUG ${toolName} Zod shape:`, Object.keys(parameters.shape || {}));
+        console.log(`[AI-SDK5] DEBUG ${toolName} Zod _def.typeName:`, parameters._def?.typeName);
+      }
+
       // Criar nova tool com execute function
       toolsWithExecute[toolName] = tool({
         description: (toolDef as any).description,
-        parameters: (toolDef as any).parameters,
+        parameters: parameters,
         execute: async (args: any) => {
           // ✅ Injetar CPF automaticamente se não estiver presente
           const argsWithCpf = { ...args };

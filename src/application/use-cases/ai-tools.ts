@@ -74,21 +74,23 @@ export const getVirtualAssistanceTools = (configService: ConfigService) => {
     (tools as any).generateReport = {
       description:
         '⚠️ OBRIGATÓRIO: EXECUTE ESTA TOOL imediatamente quando usuário pedir "relatório"/"PDF"/"exportar"/"download"/"gerar arquivo". NUNCA apenas retorne dados formatados - você DEVE executar generateReport. SEQUÊNCIA: 1) busque dados necessários, 2) EXECUTE generateReport, 3) retorne link. Gera arquivo PDF dos dados obtidos nas ferramentas anteriores. RETORNA: {downloadUrl: "link_para_download"} ou {error: "mensagem"}.',
-      parameters: z.object({
-        cpf: z.string().describe('CPF do usuário logado'),
-        sectionLabels: z
-          .array(z.string())
-          .optional()
-          .describe(
-            '⚠️ LABELS DESCRITIVAS: Crie labels claras e descritivas para cada seção do relatório baseadas no que o usuário pediu. Exemplos: ["Email e Grupo do Aluno Joaquim", "Dados Completos da Preceptora Eugenia"] ou ["Informações de Contato", "Dados Acadêmicos"]. Uma label para cada fonte de dados buscada.',
-          ),
-        sectionFilters: z
-          .array(z.string())
-          .optional()
-          .describe(
-            '⚠️ FILTROS POR SEÇÃO: Array com filtros específicos para cada seção (mesma ordem que sectionLabels). Use palavras em PORTUGUÊS (nome, email, telefone, grupo, curso, instituição). Exemplos: ["email, grupo, curso", ""] = primeira seção só email/grupo/curso, segunda seção todos os dados. ["nome", "email, telefone"] = primeira seção só nome, segunda seção email e telefone. Se não especificar filtro para uma seção, use string vazia "" para incluir todos os dados.',
-          ),
-      }),
+      parameters: z
+        .object({
+          cpf: z.string().describe('CPF do usuário logado'),
+          sectionLabels: z
+            .array(z.string())
+            .optional()
+            .describe(
+              '⚠️ LABELS DESCRITIVAS: Crie labels claras e descritivas para cada seção do relatório baseadas no que o usuário pediu. Exemplos: ["Email e Grupo do Aluno Joaquim", "Dados Completos da Preceptora Eugenia"] ou ["Informações de Contato", "Dados Acadêmicos"]. Uma label para cada fonte de dados buscada.',
+            ),
+          sectionFilters: z
+            .array(z.string())
+            .optional()
+            .describe(
+              '⚠️ FILTROS POR SEÇÃO: Array com filtros específicos para cada seção (mesma ordem que sectionLabels). Use palavras em PORTUGUÊS (nome, email, telefone, grupo, curso, instituição). Exemplos: ["email, grupo, curso", ""] = primeira seção só email/grupo/curso, segunda seção todos os dados. ["nome", "email, telefone"] = primeira seção só nome, segunda seção email e telefone. Se não especificar filtro para uma seção, use string vazia "" para incluir todos os dados.',
+            ),
+        })
+        .strict(), // Adiciona validação strict
     };
   }
 
