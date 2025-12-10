@@ -3,12 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { google } from '@ai-sdk/google';
 import {
   streamText,
-  stepCountIs,
   type CoreMessage,
   type ToolCallPart,
+  tool,
 } from 'ai';
 import type { LanguageModelV2 } from '@ai-sdk/provider';
-import { z } from 'zod';
+import { jsonSchema } from '@ai-sdk/provider-utils';
 import { User } from '../../domain/entities/user.entity';
 import { AIService } from '../../domain/services/ai.service';
 import { VirtualAssistanceService } from '../../domain/services/virtual-assistance.service';
@@ -113,39 +113,178 @@ export class GeminiAIService implements AIService {
     }
   }
 
-  // ✅ NOVO: Adiciona execute functions dinamicamente nas tools
-  // Isso permite que o AI SDK execute as tools automaticamente com maxSteps
-  private addExecuteFunctionsToTools(
-    tools: Record<string, any>,
+  // ✅ AI SDK v5: Converte ToolDefinitions em tools com execute functions
+  // As definições vêm de ai-tools.ts com Zod schemas
+  // Aqui criamos as tools completas com execute function
+  private buildToolsWithExecute(
+    toolDefinitions: Record<string, { description: string; parameters: any }>,
     cpf: string,
   ): Record<string, any> {
     const { tool } = require('ai');
-    const { z } = require('zod');
+    const { zodToJsonSchema } = require('zod-to-json-schema');
     const toolsWithExecute: Record<string, any> = {};
 
-    for (const [toolName, toolDef] of Object.entries(tools)) {
-      // ✅ FIX: Garantir que parameters sempre seja um z.object válido
-      // Gemini exige que parameters tenha type: "object"
-      let parameters = (toolDef as any).parameters;
+    for (const [toolName, toolDef] of Object.entries(toolDefinitions)) {
+      // ✅ Debug: Verificar se parameters é um Zod schema válido
+      const isZodSchema =
+        toolDef.parameters &&
+        typeof toolDef.parameters === 'object' &&
+        ('_def' in toolDef.parameters || 'parse' in toolDef.parameters);
+      
+      console.log(`[AI-SDK5] Building tool ${toolName}:`, {
+        hasParameters: !!toolDef.parameters,
+        isZodSchema,
+        parametersType: typeof toolDef.parameters,
+        description: toolDef.description?.substring(0, 50) + '...',
+      });
 
-      // Se parameters não existe ou não é ZodObject, criar z.object({}) vazio
-      if (!parameters || !parameters._def || parameters._def.typeName !== 'ZodObject') {
+      if (!toolDef.parameters) {
+        console.error(`[AI-SDK5] ⚠️ Tool ${toolName} has no parameters!`);
+        continue;
+      }
+
+      // ✅ Schema explícito para Gemini (evita $ref e garante type OBJECT)
+      // 🔧 FIX: Adicionados TODOS os tools para evitar fallback bugado do zodToJsonSchema
+      const explicitSchemas: Record<string, any> = {
+        findPersonByName: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Nome da pessoa (ex: "João Silva", "Dra. Ana")' },
+            cpf: { type: 'string', description: 'CPF do usuário logado fazendo a busca' },
+          },
+          required: ['name', 'cpf'],
+        },
+        generateReport: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do usuário logado' },
+            sectionLabels: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Labels descritivas para cada seção do relatório',
+            },
+            sectionFilters: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Filtros por seção (mesma ordem de sectionLabels). "" para todos os dados.',
+            },
+          },
+          required: ['cpf'],
+        },
+        // 🆕 Coordinator tools
+        getCoordinatorsOngoingActivities: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do coordenador autenticado' },
+          },
+          required: ['cpf'],
+        },
+        getCoordinatorsProfessionals: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do coordenador autenticado' },
+          },
+          required: ['cpf'],
+        },
+        getCoordinatorsStudents: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do coordenador autenticado' },
+          },
+          required: ['cpf'],
+        },
+        getCoordinatorInfo: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do coordenador autenticado' },
+          },
+          required: ['cpf'],
+        },
+        // 🆕 Student tools (MISSING BEFORE - CAUSING BUG!)
+        getStudentInfo: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do estudante autenticado' },
+          },
+          required: ['cpf'],
+        },
+        getStudentsProfessionals: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do estudante autenticado' },
+          },
+          required: ['cpf'],
+        },
+        getStudentsScheduledActivities: {
+          type: 'object',
+          properties: {
+            cpf: { type: 'string', description: 'CPF do estudante autenticado' },
+          },
+          required: ['cpf'],
+        },
+      };
+
+      let jsonSchemaParams: any = explicitSchemas[toolName];
+
+      // Fallback: se não achar no mapa, tentar converter Zod de forma simples
+      if (!jsonSchemaParams) {
+        try {
+          if (isZodSchema) {
+            const raw = zodToJsonSchema(toolDef.parameters, {
+              target: 'jsonSchema7',
+              $refStrategy: 'none',
+            });
+            jsonSchemaParams =
+              raw && raw.type === 'object' && raw.properties
+                ? raw
+                : {
+                    type: 'object',
+                    properties: (raw as any)?.properties || {},
+                    required: (raw as any)?.required || [],
+                  };
+          } else {
+            jsonSchemaParams = toolDef.parameters;
+          }
+        } catch (conversionError: any) {
+          console.error(`[AI-SDK5] ⚠️ Error converting schema for ${toolName}:`, conversionError.message);
+          jsonSchemaParams = toolDef.parameters;
+        }
+      } else {
+        console.log(`[AI-SDK5] Using explicit JSON Schema for ${toolName}`);
+      }
+
+      // Debug do schema final
+      const propsCount =
+        jsonSchemaParams?.properties && typeof jsonSchemaParams.properties === 'object'
+          ? Object.keys(jsonSchemaParams.properties).length
+          : 0;
+      console.log(`[AI-SDK5] Final schema for ${toolName}:`, {
+        type: jsonSchemaParams?.type,
+        propertiesCount: propsCount,
+        required: jsonSchemaParams?.required,
+      });
+
+      // ✅ Garantir schema com type: 'object' para o Gemini (function calling exige isso)
+      if (!jsonSchemaParams || jsonSchemaParams.type !== 'object') {
         console.warn(
-          `[AI-SDK5] Tool ${toolName} has invalid parameters, creating empty object`,
+          `[AI-SDK5] ⚠️ Schema sem type object detectado para ${toolName}, aplicando fallback seguro.`,
         );
-        parameters = z.object({});
+        jsonSchemaParams = {
+          type: 'object',
+          properties: jsonSchemaParams?.properties || {},
+          required: Array.isArray(jsonSchemaParams?.required)
+            ? jsonSchemaParams.required
+            : [],
+        };
       }
 
-      // Debug: Log da estrutura Zod ANTES de passar para tool()
-      if (toolName === 'findPersonByName') {
-        console.log(`[AI-SDK5] DEBUG ${toolName} Zod shape:`, Object.keys(parameters.shape || {}));
-        console.log(`[AI-SDK5] DEBUG ${toolName} Zod _def.typeName:`, parameters._def?.typeName);
-      }
+      // ✅ Empacotar como schema do AI SDK para evitar conversão indevida para Zod
+      const wrappedSchema = jsonSchema(jsonSchemaParams);
 
-      // Criar nova tool com execute function
       toolsWithExecute[toolName] = tool({
-        description: (toolDef as any).description,
-        parameters: parameters,
+        description: toolDef.description,
+        // 🔒 Enviar JSON Schema explícito (evita INVALID_ARGUMENT no Gemini)
+        inputSchema: wrappedSchema,
         execute: async (args: any) => {
           // ✅ Injetar CPF automaticamente se não estiver presente
           const argsWithCpf = { ...args };
@@ -168,6 +307,7 @@ export class GeminiAIService implements AIService {
       });
     }
 
+    console.log(`[AI-SDK5] Built ${Object.keys(toolsWithExecute).length} tools with execute functions`);
     return toolsWithExecute;
   }
 
@@ -236,11 +376,26 @@ export class GeminiAIService implements AIService {
       JSON.stringify(trimmedMessages.slice(-2), null, 2).substring(0, 500),
     );
 
-    // 4. ✅ NOVO: Adicionar execute functions nas tools
-    const toolsWithExecute = this.addExecuteFunctionsToTools(
+    // 4. ✅ AI SDK v5: Construir tools com execute functions
+    console.log('[AI-SDK5] Available tools received:', {
+      count: Object.keys(availableTools).length,
+      toolNames: Object.keys(availableTools),
+      firstTool: availableTools[Object.keys(availableTools)[0]] ? {
+        hasDescription: !!availableTools[Object.keys(availableTools)[0]].description,
+        hasParameters: !!availableTools[Object.keys(availableTools)[0]].parameters,
+        parametersType: typeof availableTools[Object.keys(availableTools)[0]].parameters,
+      } : null,
+    });
+    
+    const toolsWithExecute = this.buildToolsWithExecute(
       availableTools,
       actor.cpf,
     );
+    
+    console.log('[AI-SDK5] Tools with execute built:', {
+      count: Object.keys(toolsWithExecute).length,
+      toolNames: Object.keys(toolsWithExecute),
+    });
 
     // Métricas de tokens
     const systemPrompt = this.promptService.getSystemPrompt(actor);
@@ -258,6 +413,32 @@ export class GeminiAIService implements AIService {
     );
     console.log('[METRICS] Message history length:', trimmedMessages.length);
 
+    // 🔍 Enhanced debugging logs for tool calling
+    console.log('[DEBUG] ===== TOOL CALLING DEBUG =====');
+    console.log('[DEBUG] User message:', userMessage);
+    console.log('[DEBUG] User role:', actor.role);
+    console.log('[DEBUG] Tools being sent to Gemini:', {
+      count: Object.keys(toolsWithExecute).length,
+      names: Object.keys(toolsWithExecute),
+    });
+
+    // Log first tool schema as sample
+    const firstToolName = Object.keys(toolsWithExecute)[0];
+    if (firstToolName && toolsWithExecute[firstToolName]) {
+      const sampleTool = toolsWithExecute[firstToolName] as any;
+      console.log('[DEBUG] Sample tool schema (first tool):', JSON.stringify({
+        name: firstToolName,
+        description: availableTools[firstToolName]?.description?.substring(0, 100) + '...',
+        schemaPreview: JSON.stringify(
+          sampleTool?.inputSchema || sampleTool?.parameters || {},
+        ).substring(0, 300) + '...',
+      }, null, 2));
+    }
+
+    console.log('[DEBUG] Temperature: 0.1');
+    console.log('[DEBUG] Model:', 'gemini-2.0-flash');
+    console.log('[DEBUG] ================================');
+
     let result;
     let usedFallback = false;
 
@@ -271,8 +452,7 @@ export class GeminiAIService implements AIService {
         system: systemPrompt,
         messages: trimmedMessages,
         tools: toolsWithExecute, // ✅ Tools com execute functions
-        stopWhen: stepCountIs(10), // ✅ Controla loop automático: até 10 steps (tool calls + text generation)
-        temperature: 0.1,
+        temperature: 0.4, // 🔧 FIX: Changed from 0.1 - better for tool calling (was too conservative)
         maxRetries: 0,
         experimental_telemetry: { isEnabled: false },
         onStepFinish: ({
@@ -290,6 +470,15 @@ export class GeminiAIService implements AIService {
             inputTokens: usage?.inputTokens,
             outputTokens: usage?.outputTokens,
           });
+
+          // 🔍 Enhanced logging for debugging
+          if (toolCalls && toolCalls.length > 0) {
+            console.log('[AI-SDK5] ✅ Tools called in this step:',
+              toolCalls.map(tc => tc.toolName)
+            );
+          } else if (!text || text.length === 0) {
+            console.warn('[AI-SDK5] ⚠️ NO TOOLS CALLED AND NO TEXT! Reason:', finishReason);
+          }
         },
       });
     } catch (primaryError: any) {
@@ -317,8 +506,7 @@ export class GeminiAIService implements AIService {
           system: systemPrompt,
           messages: trimmedMessages,
           tools: toolsWithExecute, // ✅ Tools com execute functions (AI SDK 5.0 executa automaticamente)
-          stopWhen: stepCountIs(10), // ✅ Controla loop automático no fallback também
-          temperature: 0.1,
+          temperature: 0.4, // 🔧 FIX: Changed from 0.1
           maxRetries: 2,
           experimental_telemetry: { isEnabled: false },
           onStepFinish: ({
@@ -334,6 +522,15 @@ export class GeminiAIService implements AIService {
               toolResultsCount: toolResults?.length || 0,
               finishReason,
             });
+
+            // 🔍 Enhanced logging for debugging
+            if (toolCalls && toolCalls.length > 0) {
+              console.log('[AI-SDK5-FALLBACK] ✅ Tools called:',
+                toolCalls.map(tc => tc.toolName)
+              );
+            } else if (!text || text.length === 0) {
+              console.warn('[AI-SDK5-FALLBACK] ⚠️ NO TOOLS CALLED AND NO TEXT! Reason:', finishReason);
+            }
           },
         });
       } else {

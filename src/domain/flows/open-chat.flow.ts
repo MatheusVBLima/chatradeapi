@@ -315,10 +315,11 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
     }
 
     if (role === 'coordinator') {
-      // Coordinators can also use student tools to look up specific students
-      return { ...commonTools, ...studentTools, ...coordinatorTools };
+      // Coordenador: apenas tools de coordenador + comuns
+      return { ...commonTools, ...coordinatorTools };
     }
 
+    // Estudante: tools de estudante + comuns
     return { ...commonTools, ...studentTools };
   }
 }
