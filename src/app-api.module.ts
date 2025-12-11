@@ -32,7 +32,6 @@ import { NotificationService } from './application/services/notification.service
 import { ResumoConversaService } from './application/services/resumo-conversa.service';
 import { SessionCacheService } from './application/services/session-cache.service';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
-import { StreamdownService } from './infrastructure/services/streamdown.service';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -85,7 +84,6 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ApiClientService,
     ApiVirtualAssistanceService,
     ApiUserRepository,
-    StreamdownService,
     GeminiAIService, // Adicionado para ClosedChatFlow
     {
       provide: APP_GUARD,
