@@ -24,10 +24,24 @@ export class ZapiService {
     });
   }
 
+  /**
+   * Converte markdown para formatação nativa do WhatsApp
+   * - **negrito** → *negrito*
+   * - ~~tachado~~ → ~tachado~
+   */
+  private formatForWhatsApp(text: string): string {
+    return text
+      .replace(/\*\*(.+?)\*\*/g, '*$1*')  // **negrito** → *negrito*
+      .replace(/~~(.+?)~~/g, '~$1~');     // ~~tachado~~ → ~tachado~
+  }
+
   async sendWhatsAppMessage(to: string, message: string): Promise<any> {
+    // Converter markdown para formato WhatsApp
+    const formattedMessage = this.formatForWhatsApp(message);
+
     console.log('[ZAPI-SERVICE] Attempting to send message:', {
       to,
-      messageLength: message.length,
+      messageLength: formattedMessage.length,
     });
 
     try {
@@ -51,15 +65,15 @@ export class ZapiService {
       await this.sendTypingIndicator(formattedPhone, true);
 
       // 2. Simular um pequeno delay (500ms a 2s dependendo do tamanho da mensagem)
-      const typingDelay = Math.min(2000, Math.max(500, message.length * 20));
+      const typingDelay = Math.min(2000, Math.max(500, formattedMessage.length * 20));
       await this.delay(typingDelay);
 
-      // 3. Enviar a mensagem
+      // 3. Enviar a mensagem (já formatada para WhatsApp)
       const response = await axios.post(
         `${this.baseUrl}/send-text`,
         {
           phone: formattedPhone,
-          message: message,
+          message: formattedMessage,
         },
         { headers }
       );
