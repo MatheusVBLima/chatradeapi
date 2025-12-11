@@ -333,6 +333,9 @@ export class GeminiAIService implements AIService {
     availableTools: Record<string, any>,
     maxToolDepth: number = 3,
     conversationHistory: Array<{ role: string; content: any }> = [],
+    streamCallbacks?: {
+      onTextChunk?: (chunk: string) => void;
+    },
   ): Promise<{
     text: string;
     messages: Array<{ role: string; content: any }>;
@@ -579,6 +582,9 @@ export class GeminiAIService implements AIService {
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
           finalText += part.text;
+          if (streamCallbacks?.onTextChunk) {
+            streamCallbacks.onTextChunk(part.text);
+          }
         } else if (part.type === 'tool-call') {
           toolCallsCount++;
           if (this.debugVerbose) {

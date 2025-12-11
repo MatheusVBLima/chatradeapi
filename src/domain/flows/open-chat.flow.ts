@@ -55,6 +55,9 @@ export class OpenChatFlow {
     phone?: string,
     isTestMode?: boolean,
     environment?: 'web' | 'mobile',
+    streamCallbacks?: {
+      onTextChunk?: (chunk: string) => void;
+    },
   ): Promise<FlowResponse> {
     // Sobrescrever SIMULATION_MODE se isTestMode for fornecido
     this.currentSimulationMode =
@@ -76,7 +79,13 @@ export class OpenChatFlow {
         return this.handlePhoneInput(message, stateData);
 
       case OpenChatFlowState.AUTHENTICATED:
-        return this.handleAuthenticatedChat(message, stateData, phone, environment);
+        return this.handleAuthenticatedChat(
+          message,
+          stateData,
+          phone,
+          environment,
+          streamCallbacks,
+        );
 
       default:
         return this.handleStart();
@@ -232,6 +241,9 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
     stateData: any,
     phone?: string,
     environment?: 'web' | 'mobile',
+    streamCallbacks?: {
+      onTextChunk?: (chunk: string) => void;
+    },
   ): Promise<FlowResponse> {
     try {
       // Buscar usuário autenticado
@@ -261,6 +273,7 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
         availableTools,
         3, // maxToolDepth
         conversationHistory, // histórico de conversação
+        streamCallbacks,
       );
 
       // ✅ CRÍTICO: Usar as mensagens completas retornadas (incluem tool results)

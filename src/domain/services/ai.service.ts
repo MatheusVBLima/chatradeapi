@@ -19,5 +19,8 @@ export interface AIService {
     availableTools: Record<string, any>,
     maxToolDepth?: number,
     conversationHistory?: Array<{ role: string; content: any }>,
+    streamCallbacks?: {
+      onTextChunk?: (chunk: string) => void;
+    },
   ): Promise<AIToolCallResult>;
 }
