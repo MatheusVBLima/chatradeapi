@@ -10,6 +10,7 @@ export class User {
   email: string;
   phone: string;
   cpf: string;
+  environment?: 'web' | 'mobile';
   birthDate: Date;
   address: {
     street: string;
