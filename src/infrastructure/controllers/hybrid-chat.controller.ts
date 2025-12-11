@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { ProcessOpenChatMessageUseCase } from '../../application/use-cases/process-open-chat-message.use-case';
@@ -18,6 +19,7 @@ import { ApiVirtualAssistanceService } from '../services/api-virtual-assistance.
 import { GeminiAIService } from '../services/gemini-ai.service';
 import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 import axios from 'axios';
+import { Response } from 'express';
 
 // Flow states for hybrid chat
 enum HybridChatFlowState {
@@ -138,6 +140,104 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  @Post('hybrid/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chat híbrido com streaming (web)',
+    description:
+      'Versão streaming do chat híbrido. Envia parciais para ambiente web e mantém texto plano para demais canais.',
+  })
+  async processHybridMessageStream(
+    @Body() request: HybridChatRequestDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const writeEvent = (payload: any) =>
+      res.write(`${JSON.stringify(payload)}\n`);
+
+    try {
+      // Se não está em AI_CHAT, usa fluxo tradicional e retorna em um único evento
+      if (!request.state || request.state.currentState !== HybridChatFlowState.AI_CHAT) {
+        const result = await this.handle(
+          request.message,
+          request.state || null,
+          request.environment,
+        );
+        writeEvent({ type: 'end', content: result.response, nextState: result.nextState });
+        res.end();
+        return;
+      }
+
+      const hybridState = request.state;
+      const actorEnvironment = hybridState.data.environment || ChatEnvironment.WEB;
+
+      const flowResult = await this.processOpenChatMessageUseCase.execute(
+        {
+          message: request.message,
+          userId: hybridState.data.userCpf,
+          phone: hybridState.data.userPhone,
+          environment: actorEnvironment,
+          state:
+            hybridState.data.openChatState || {
+              currentState: 'AUTHENTICATED',
+              data: {
+                cpf:
+                  hybridState.data.userCpf ||
+                  hybridState.data.studentCpf ||
+                  hybridState.data.coordinatorCpf,
+                phone: hybridState.data.userPhone,
+                userId:
+                  hybridState.data.userCpf ||
+                  hybridState.data.studentCpf ||
+                  hybridState.data.coordinatorCpf,
+                role: hybridState.data.userType,
+                userName:
+                  hybridState.data.studentName || hybridState.data.coordinatorName,
+                conversationHistory:
+                  hybridState.data.conversationHistory || [],
+              },
+            },
+        },
+        {
+          onTextChunk: (chunk: string) => {
+            writeEvent({ type: 'chunk', content: chunk });
+          },
+        },
+      );
+
+      const nextHybridState: HybridChatState = {
+        currentState: HybridChatFlowState.AI_CHAT,
+        data: {
+          ...hybridState.data,
+          openChatState: flowResult.nextState,
+          conversationHistory:
+            flowResult.nextState?.data?.conversationHistory ||
+            hybridState.data.conversationHistory ||
+            [],
+        },
+      };
+
+      writeEvent({
+        type: 'end',
+        content: flowResult.response,
+        nextState: nextHybridState,
+      });
+      res.end();
+      return;
+    } catch (error) {
+      this.logger.error('[PROD] Error in hybrid chat stream:', error);
+      writeEvent({
+        type: 'error',
+        error: 'Erro interno. Tente novamente mais tarde.',
+      });
+      res.end();
+      return;
     }
   }
 

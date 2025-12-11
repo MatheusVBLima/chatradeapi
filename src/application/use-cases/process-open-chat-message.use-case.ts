@@ -35,6 +35,9 @@ export class ProcessOpenChatMessageUseCase {
 
   async execute(
     request: ProcessOpenChatMessageRequest,
+    streamCallbacks?: {
+      onTextChunk?: (chunk: string) => void;
+    },
   ): Promise<ProcessOpenChatMessageResponse> {
     try {
       // Usar o OpenChatFlow para gerenciar estados conversacionais
@@ -44,6 +47,7 @@ export class ProcessOpenChatMessageUseCase {
         request.phone,
         false, // isTestMode = false (produção)
         request.environment,
+        streamCallbacks,
       );
 
       return {

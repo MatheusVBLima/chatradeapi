@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -15,6 +16,8 @@ import {
   ClosedChatRequestDto,
   ChatResponseDto,
 } from '../dto';
+import { Response } from 'express';
+import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -61,6 +64,50 @@ export class ChatController {
       error: result.error,
       nextState: result.nextState,
     };
+  }
+
+  @Post('open/stream')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Chat aberto com IA (streaming)',
+    description: 'Retorna parciais via NDJSON para ambiente web; mantém texto plano para outros canais.',
+  })
+  async processOpenMessageStream(
+    @Body() request: OpenChatRequestDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const writeEvent = (payload: any) =>
+      res.write(`${JSON.stringify(payload)}\n`);
+
+    try {
+      const result = await this.processOpenChatMessageUseCase.execute(
+        {
+          ...request,
+          environment: request.environment || ChatEnvironment.WEB,
+        },
+        {
+          onTextChunk: (chunk: string) => writeEvent({ type: 'chunk', content: chunk }),
+        },
+      );
+
+      writeEvent({
+        type: 'end',
+        content: result.response,
+        nextState: result.nextState,
+      });
+      res.end();
+    } catch (error) {
+      this.logger.error('[PROD] Error in open chat stream:', error);
+      writeEvent({
+        type: 'error',
+        error: 'Erro interno. Tente novamente mais tarde.',
+      });
+      res.end();
+    }
   }
 
   @Post('closed')
