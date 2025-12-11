@@ -76,7 +76,7 @@ export class OpenChatFlow {
         return this.handlePhoneInput(message, stateData);
 
       case OpenChatFlowState.AUTHENTICATED:
-        return this.handleAuthenticatedChat(message, stateData, phone);
+        return this.handleAuthenticatedChat(message, stateData, phone, environment);
 
       default:
         return this.handleStart();
@@ -231,6 +231,7 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
     message: string,
     stateData: any,
     phone?: string,
+    environment?: 'web' | 'mobile',
   ): Promise<FlowResponse> {
     try {
       // Buscar usuário autenticado
@@ -251,6 +252,9 @@ Pode fazer suas perguntas sobre o sistema RADE!`,
       const conversationHistory = stateData.conversationHistory || [];
 
       // Processar mensagem com IA (passando histórico)
+      // Anotar ambiente para formatação (web vs mobile)
+      (user as any).environment = environment;
+
       const aiResult = await this.aiService.processToolCall(
         user,
         message,
