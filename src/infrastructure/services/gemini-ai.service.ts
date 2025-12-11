@@ -20,6 +20,7 @@ import {
   MetricsService,
   ChatMetric,
 } from '../../application/services/metrics.service';
+import { StreamdownService } from './streamdown.service';
 
 @Injectable()
 export class GeminiAIService implements AIService {
@@ -34,6 +35,7 @@ export class GeminiAIService implements AIService {
     private readonly cacheService: CacheService,
     private readonly promptService: PromptService,
     private readonly metricsService: MetricsService,
+    private readonly streamdownService: StreamdownService,
   ) {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>(
       'GOOGLE_GENERATIVE_AI_API_KEY',
@@ -597,6 +599,7 @@ export class GeminiAIService implements AIService {
     // ✅ Com stopWhen, AI SDK garante que sempre teremos texto final
     // Usar completeText se finalText do stream estiver vazio
     const responseText = finalText || completeText;
+    const formattedResponseText = (actor as any)?.environment === 'web' ? this.streamdownService.render(responseText) : responseText;
 
     // ⚠️ Se ainda não houver texto, tentar uma segunda geração sem tools, usando dados das ferramentas como contexto
     if (!responseText || responseText.trim().length === 0) {
@@ -736,7 +739,7 @@ export class GeminiAIService implements AIService {
 
     // ✅ Retornar texto E mensagens completas (com tool results)
     return {
-      text: responseText,
+      text: formattedResponseText,
       messages: updatedMessages,
     };
   }
