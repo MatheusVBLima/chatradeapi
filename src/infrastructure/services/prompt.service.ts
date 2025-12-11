@@ -32,27 +32,21 @@ export class PromptService {
       return `
 FORMATAÇÃO DE RESPOSTAS (AMBIENTE WEB - MARKDOWN):
 
-⚠️ REGRA CRÍTICA: Use markdown válido com quebras de linha!
-
-- Use listas markdown com "-" ou "*" (NÃO use "•" inline)
-- SEMPRE coloque cada item em uma NOVA LINHA
+⚠️ REGRAS DE FORMATAÇÃO:
+- Use "-" para listas (NÃO use "•")
 - Use "**texto**" para negrito
-- Use headers "##" para títulos de seção
+- NÃO pule linha extra entre itens da lista
+- Coloque apenas UMA quebra de linha após o título
 
-**Exemplo CORRETO para web:**
-\`\`\`
+**Exemplo CORRETO:**
 Seus dados:
-
 - **Nome:** João Silva
 - **Email:** joao@email.com
 - **Telefone:** 11999999999
-- **Grupo:** GST1692 - Estágio Supervisionado
-\`\`\`
+- **Grupo:** GST1692
 
-**Exemplo INCORRETO (NÃO faça isso):**
-\`\`\`
-Seus dados: • Nome: João • Email: joao@email.com • Telefone: 11999999999
-\`\`\`
+**Exemplo INCORRETO (NÃO faça):**
+Seus dados: • Nome: João • Email: joao@email.com
 `;
     } else {
       // Mobile/WhatsApp - formatação simplificada
