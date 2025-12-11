@@ -1928,7 +1928,7 @@ export class GeminiAIService implements AIService {
 
       case 'findPersonByName':
         const { name: searchName, cpf: searcherCpf } = args;
-        let foundPerson: any = null;
+        const foundPersons: any[] = []; // Array para múltiplos resultados
 
         // Função para normalizar texto (remover acentos e converter para lowercase)
         const normalizeText = (text: string): string => {
@@ -1963,54 +1963,66 @@ export class GeminiAIService implements AIService {
           return matrix[b.length][a.length];
         };
 
-        // Função para buscar pessoa em uma lista de dados
-        const searchPersonInData = (
+        // Função para buscar TODAS as pessoas que correspondem ao nome (retorna arrays)
+        const searchAllPersonsInData = (
           dataList: any[],
           searchNameParam: string,
-        ): { exact: any; similar: any } => {
-          let exactMatch: any = null;
-          let similarMatch: any = null;
+        ): { exactMatches: any[]; similarMatches: any[] } => {
+          const exactMatches: any[] = [];
+          const similarMatches: any[] = [];
+          const normalizedSearchName = normalizeText(searchNameParam);
+          const searchWords = normalizedSearchName
+            .split(' ')
+            .filter((w) => w.length >= 2);
 
-          // Primeiro tentar busca exata (palavras completas)
-          exactMatch = dataList.find((person) => {
-            if (!person.name) return false;
+          for (const person of dataList) {
+            if (!person.name) continue;
             const normalizedPersonName = normalizeText(person.name);
-            const normalizedSearchName = normalizeText(searchNameParam);
             const personWords = normalizedPersonName.split(' ');
-            const searchWords = normalizedSearchName.split(' ');
 
-            return searchWords.every((searchWord) =>
+            // Verificar match exato (todas as palavras da busca existem no nome)
+            const isExactMatch = searchWords.every((searchWord) =>
               personWords.some((personWord) => personWord === searchWord),
             );
-          });
 
-          if (!exactMatch) {
-            const searchWords = normalizeText(searchNameParam)
-              .split(' ')
-              .filter((w) => w.length >= 3);
+            if (isExactMatch) {
+              exactMatches.push(person);
+              continue;
+            }
 
-            similarMatch = dataList.find((person) => {
-              if (!person.name) return false;
-              const personWords = normalizeText(person.name).split(' ');
-
-              return searchWords.some((searchWord) => {
-                return personWords.some((personWord) => {
-                  if (searchWord.length >= 4 && personWord.length >= 4) {
-                    const distance = editDistance(searchWord, personWord);
-                    const maxErrors = searchWord.length <= 6 ? 1 : 2;
-                    const minSimilarity = 0.75;
-                    const similarity =
-                      1 -
-                      distance / Math.max(searchWord.length, personWord.length);
-                    return distance <= maxErrors && similarity >= minSimilarity;
-                  }
-                  return false;
-                });
+            // Verificar match similar (fuzzy matching)
+            const isSimilarMatch = searchWords.some((searchWord) => {
+              return personWords.some((personWord) => {
+                if (searchWord.length >= 4 && personWord.length >= 4) {
+                  const distance = editDistance(searchWord, personWord);
+                  const maxErrors = searchWord.length <= 6 ? 1 : 2;
+                  const minSimilarity = 0.75;
+                  const similarity =
+                    1 -
+                    distance / Math.max(searchWord.length, personWord.length);
+                  return distance <= maxErrors && similarity >= minSimilarity;
+                }
+                return false;
               });
             });
+
+            if (isSimilarMatch) {
+              similarMatches.push(person);
+            }
           }
 
-          return { exact: exactMatch, similar: similarMatch };
+          return { exactMatches, similarMatches };
+        };
+
+        // Função para remover duplicatas baseado em nome + email
+        const removeDuplicates = (persons: any[]): any[] => {
+          const seen = new Set<string>();
+          return persons.filter((person) => {
+            const key = `${person.name}_${person.email}`.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         };
 
         // 1. PRIMEIRO: Buscar em TODOS os caches disponíveis
@@ -2025,38 +2037,41 @@ export class GeminiAIService implements AIService {
           cacheKeysToSearch,
         );
 
+        let allExactMatches: any[] = [];
+        let allSimilarMatches: any[] = [];
+
         for (const cacheKey of cacheKeysToSearch) {
           const cachedData = this.cacheService.get(cacheKey);
           if (cachedData && Array.isArray(cachedData)) {
             console.log(
               `[SEARCH] Found cache "${cacheKey}" with ${cachedData.length} items`,
             );
-            const { exact, similar } = searchPersonInData(
+            const { exactMatches, similarMatches } = searchAllPersonsInData(
               cachedData,
               searchName,
             );
 
-            if (exact) {
-              console.log(`[SEARCH] Exact match found in cache: ${exact.name}`);
-              foundPerson = exact;
-              break;
+            if (exactMatches.length > 0) {
+              console.log(
+                `[SEARCH] Found ${exactMatches.length} exact matches in cache "${cacheKey}"`,
+              );
+              allExactMatches.push(...exactMatches);
             }
 
-            if (similar && !foundPerson) {
+            if (similarMatches.length > 0) {
               console.log(
-                `[SEARCH] Similar match found in cache: ${similar.name}`,
+                `[SEARCH] Found ${similarMatches.length} similar matches in cache "${cacheKey}"`,
               );
-              // Guardar similar mas continuar buscando por exato
-              foundPerson = { ...similar, _isSimilar: true };
+              allSimilarMatches.push(...similarMatches);
             }
           }
         }
 
         // 2. Se não encontrou no cache, fazer chamadas de API apropriadas
-        if (!foundPerson) {
+        if (allExactMatches.length === 0 && allSimilarMatches.length === 0) {
           console.log('[SEARCH] Not found in cache, trying API calls...');
 
-          // Tentar buscar dados do coordenador (estudantes e profissionais)
+          // Tentar buscar dados do coordenador (estudantes)
           try {
             const studentsRaw =
               await this.virtualAssistanceService.getCoordinatorsStudents(
@@ -2067,22 +2082,18 @@ export class GeminiAIService implements AIService {
               console.log(
                 `[SEARCH] Fetched ${studentsRaw.length} students from API`,
               );
-              // Cache para próxima vez
               this.cacheService.set(
                 `getCoordinatorsStudents_${searcherCpf}`,
                 studentsRaw,
                 3600000,
               );
 
-              const { exact, similar } = searchPersonInData(
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
                 studentsRaw,
                 searchName,
               );
-              if (exact) {
-                foundPerson = exact;
-              } else if (similar && !foundPerson) {
-                foundPerson = { ...similar, _isSimilar: true };
-              }
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
           } catch (error: any) {
             console.log(
@@ -2091,115 +2102,125 @@ export class GeminiAIService implements AIService {
             );
           }
 
-          // Se ainda não encontrou, tentar profissionais do coordenador
-          if (!foundPerson || foundPerson._isSimilar) {
-            try {
-              const professionalsRaw =
-                await this.virtualAssistanceService.getCoordinatorsProfessionals(
-                  searcherCpf,
-                );
-
-              if (professionalsRaw && Array.isArray(professionalsRaw)) {
-                console.log(
-                  `[SEARCH] Fetched ${professionalsRaw.length} coordinator professionals from API`,
-                );
-                this.cacheService.set(
-                  `getCoordinatorsProfessionals_${searcherCpf}`,
-                  professionalsRaw,
-                  3600000,
-                );
-
-                const { exact, similar } = searchPersonInData(
-                  professionalsRaw,
-                  searchName,
-                );
-                if (exact) {
-                  foundPerson = exact;
-                } else if (similar && !foundPerson) {
-                  foundPerson = { ...similar, _isSimilar: true };
-                }
-              }
-            } catch (error: any) {
-              console.log(
-                '[SEARCH] Error fetching coordinator professionals:',
-                error.message,
+          // Tentar profissionais do coordenador
+          try {
+            const professionalsRaw =
+              await this.virtualAssistanceService.getCoordinatorsProfessionals(
+                searcherCpf,
               );
+
+            if (professionalsRaw && Array.isArray(professionalsRaw)) {
+              console.log(
+                `[SEARCH] Fetched ${professionalsRaw.length} coordinator professionals from API`,
+              );
+              this.cacheService.set(
+                `getCoordinatorsProfessionals_${searcherCpf}`,
+                professionalsRaw,
+                3600000,
+              );
+
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
+                professionalsRaw,
+                searchName,
+              );
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
+          } catch (error: any) {
+            console.log(
+              '[SEARCH] Error fetching coordinator professionals:',
+              error.message,
+            );
           }
 
-          // Se ainda não encontrou, tentar profissionais do estudante
-          if (!foundPerson || foundPerson._isSimilar) {
-            try {
-              const professionalsRaw =
-                await this.virtualAssistanceService.getStudentsProfessionals(
-                  searcherCpf,
-                );
-
-              if (professionalsRaw && Array.isArray(professionalsRaw)) {
-                console.log(
-                  `[SEARCH] Fetched ${professionalsRaw.length} student professionals from API`,
-                );
-                this.cacheService.set(
-                  `getStudentsProfessionals_${searcherCpf}`,
-                  professionalsRaw,
-                  3600000,
-                );
-
-                const { exact, similar } = searchPersonInData(
-                  professionalsRaw,
-                  searchName,
-                );
-                if (exact) {
-                  foundPerson = exact;
-                } else if (similar && !foundPerson) {
-                  foundPerson = { ...similar, _isSimilar: true };
-                }
-              }
-            } catch (error: any) {
-              console.log(
-                '[SEARCH] Error fetching student professionals:',
-                error.message,
+          // Tentar profissionais do estudante
+          try {
+            const professionalsRaw =
+              await this.virtualAssistanceService.getStudentsProfessionals(
+                searcherCpf,
               );
+
+            if (professionalsRaw && Array.isArray(professionalsRaw)) {
+              console.log(
+                `[SEARCH] Fetched ${professionalsRaw.length} student professionals from API`,
+              );
+              this.cacheService.set(
+                `getStudentsProfessionals_${searcherCpf}`,
+                professionalsRaw,
+                3600000,
+              );
+
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
+                professionalsRaw,
+                searchName,
+              );
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
+          } catch (error: any) {
+            console.log(
+              '[SEARCH] Error fetching student professionals:',
+              error.message,
+            );
           }
         }
 
-        // 3. Processar resultado
-        if (foundPerson) {
-          const isSimilar = foundPerson._isSimilar;
-          delete foundPerson._isSimilar;
+        // 3. Remover duplicatas
+        allExactMatches = removeDuplicates(allExactMatches);
+        allSimilarMatches = removeDuplicates(allSimilarMatches);
 
-          // Remover CPF antes de retornar (privacidade)
-          const foundPersonWithoutCpf = {
-            name: foundPerson.name,
-            email: foundPerson.email,
-            phone: foundPerson.phone,
-            groupNames: foundPerson.groupNames,
-          };
+        // 4. Processar resultado - priorizar matches exatos
+        const finalMatches =
+          allExactMatches.length > 0 ? allExactMatches : allSimilarMatches;
+        const isSimilarResult =
+          allExactMatches.length === 0 && allSimilarMatches.length > 0;
+
+        if (finalMatches.length > 0) {
+          // Remover CPF de todos os resultados (privacidade)
+          const resultsWithoutCpf = finalMatches.map((person) => ({
+            name: person.name,
+            email: person.email,
+            phone: person.phone,
+            groupNames: person.groupNames,
+          }));
+
+          console.log(
+            `[SEARCH] Returning ${resultsWithoutCpf.length} ${isSimilarResult ? 'similar' : 'exact'} matches for "${searchName}"`,
+          );
 
           this.cacheService.set(
             this.getLastResultCacheKey(searcherCpf),
-            [foundPersonWithoutCpf],
+            resultsWithoutCpf,
             3600000,
           );
 
-          if (isSimilar) {
-            console.log(
-              `[SEARCH] Returning similar match: ${foundPerson.name} for search "${searchName}"`,
-            );
-            return {
-              error: `Não, mas você tem "${foundPerson.name}" que é parecido.`,
-              suggestion: foundPersonWithoutCpf,
-            };
+          // Acumular para combinar com outros dados se necessário
+          for (const person of resultsWithoutCpf) {
+            this.accumulateData(searcherCpf, person, 'findPersonByName');
           }
 
-          // Acumular para combinar com outros dados se necessário
-          this.accumulateData(
-            searcherCpf,
-            foundPersonWithoutCpf,
-            'findPersonByName',
-          );
-          return foundPersonWithoutCpf;
+          // Retornar array se múltiplos, objeto único se apenas 1
+          if (resultsWithoutCpf.length === 1) {
+            if (isSimilarResult) {
+              return {
+                message: `Encontrei "${resultsWithoutCpf[0].name}" que é parecido com "${searchName}".`,
+                result: resultsWithoutCpf[0],
+              };
+            }
+            return resultsWithoutCpf[0];
+          }
+
+          // Múltiplos resultados
+          if (isSimilarResult) {
+            return {
+              message: `Encontrei ${resultsWithoutCpf.length} pessoas com nomes parecidos com "${searchName}".`,
+              results: resultsWithoutCpf,
+            };
+          }
+          return {
+            message: `Encontrei ${resultsWithoutCpf.length} pessoas com "${searchName}" no nome.`,
+            results: resultsWithoutCpf,
+          };
         } else {
           return { error: `Pessoa com nome "${searchName}" não encontrada.` };
         }
