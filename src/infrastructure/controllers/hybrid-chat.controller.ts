@@ -453,6 +453,7 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
       const response = `Claro! Aqui está o vídeo sobre isso: ${videoLinks[choice]}
 
 O vídeo foi suficiente ou posso ajudar com algo mais?
+
 1 - Sim, foi suficiente
 
 2 - Não, preciso de mais ajuda
@@ -553,6 +554,7 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
       const response = `Certo! Aqui está o vídeo com as instruções: ${videoLinks[choice]}
 
 O vídeo foi útil ou você precisa de mais alguma ajuda?
+
 1 - Sim, foi suficiente
 
 2 - Não, preciso de mais ajuda
@@ -880,6 +882,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
 
     return {
       response: `${greeting}
+
 1 - Como fazer meu cadastro
 
 2 - Como agendar minhas atividades
@@ -913,6 +916,7 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
 
     return {
       response: `${greeting}
+
 1 - Como validar atividades
 
 2 - Como realizar avaliação
