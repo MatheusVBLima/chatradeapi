@@ -20,8 +20,6 @@ import {
   MetricsService,
   ChatMetric,
 } from '../../application/services/metrics.service';
-import { StreamdownService } from './streamdown.service';
-
 @Injectable()
 export class GeminiAIService implements AIService {
   private readonly primaryModel: LanguageModelV2;
@@ -37,7 +35,6 @@ export class GeminiAIService implements AIService {
     private readonly cacheService: CacheService,
     private readonly promptService: PromptService,
     private readonly metricsService: MetricsService,
-    private readonly streamdownService: StreamdownService,
   ) {
     // Ler flag de debug do .env (default: false)
     this.debugVerbose = this.configService.get<string>('DEBUG_VERBOSE') === 'true';
@@ -638,10 +635,7 @@ export class GeminiAIService implements AIService {
     // ✅ Com stopWhen, AI SDK garante que sempre teremos texto final
     // Usar completeText se finalText do stream estiver vazio
     const responseText = finalText || completeText;
-    const formattedResponseText =
-      (actor as any)?.environment === 'web'
-        ? this.streamdownService.render(responseText)
-        : responseText;
+    const formattedResponseText = responseText;
 
     // ⚠️ Se ainda não houver texto, tentar uma segunda geração sem tools, usando dados das ferramentas como contexto
     if (!responseText || responseText.trim().length === 0) {

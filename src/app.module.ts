@@ -34,7 +34,6 @@ import { ResumoConversaService } from './application/services/resumo-conversa.se
 import { HealthModule } from './health/health.module';
 import { ZapiModule } from './infrastructure/modules/zapi.module';
 import { RadeAuthService } from './infrastructure/services/rade-auth.service';
-import { StreamdownService } from './infrastructure/services/streamdown.service';
 
 const USER_REPOSITORY = 'UserRepository';
 const AI_SERVICE = 'AIService';
@@ -87,7 +86,6 @@ const VIRTUAL_ASSISTANCE_SERVICE = 'VirtualAssistanceService';
     ApiClientService,
     ApiVirtualAssistanceService,
     ApiUserRepository,
-    StreamdownService,
     GeminiAIService, // Adicionado para ClosedChatFlow
     {
       provide: APP_GUARD,
