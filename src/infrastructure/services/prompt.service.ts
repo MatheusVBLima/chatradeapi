@@ -24,23 +24,79 @@ export class PromptService {
     }
   }
 
+  /**
+   * Retorna instruções de formatação baseadas no ambiente
+   */
+  private getFormattingInstructions(environment?: 'web' | 'mobile'): string {
+    if (environment === 'web') {
+      return `
+FORMATAÇÃO DE RESPOSTAS (AMBIENTE WEB - MARKDOWN):
+
+⚠️ REGRA CRÍTICA: Use markdown válido com quebras de linha!
+
+- Use listas markdown com "-" ou "*" (NÃO use "•" inline)
+- SEMPRE coloque cada item em uma NOVA LINHA
+- Use "**texto**" para negrito
+- Use headers "##" para títulos de seção
+
+**Exemplo CORRETO para web:**
+\`\`\`
+Seus dados:
+
+- **Nome:** João Silva
+- **Email:** joao@email.com
+- **Telefone:** 11999999999
+- **Grupo:** GST1692 - Estágio Supervisionado
+\`\`\`
+
+**Exemplo INCORRETO (NÃO faça isso):**
+\`\`\`
+Seus dados: • Nome: João • Email: joao@email.com • Telefone: 11999999999
+\`\`\`
+`;
+    } else {
+      // Mobile/WhatsApp - formatação simplificada
+      return `
+FORMATAÇÃO DE RESPOSTAS (AMBIENTE MOBILE/WHATSAPP):
+
+- Use "*texto*" para negrito (formato WhatsApp)
+- Use bullet "•" para listas
+- Mantenha tudo em formato de texto simples
+- Evite markdown complexo (headers, code blocks)
+
+**Exemplo para mobile:**
+Seus dados:
+• Nome: João Silva
+• Email: joao@email.com
+• Telefone: 11999999999
+`;
+    }
+  }
+
   getSystemPrompt(actor: User): string {
     const isCoordinator = actor.role === 'coordinator';
     const promptFile = isCoordinator ? 'coordinator.prompt.md' : 'student.prompt.md';
-    
+    // Obter environment do actor (anotado em open-chat.flow.ts linha 268)
+    const environment = (actor as any).environment as 'web' | 'mobile' | undefined;
+
     try {
       const promptContent = readFileSync(join(this.promptsPath, promptFile), 'utf-8');
 
       if (this.debugVerbose) {
         console.log(`[PROMPT] Loading ${promptFile} from ${this.promptsPath}`);
+        console.log(`[PROMPT] Environment: ${environment}`);
         console.log(`[PROMPT] Content preview: ${promptContent.substring(0, 200)}...`);
       }
+
+      // Obter instruções de formatação baseadas no ambiente
+      const formattingInstructions = this.getFormattingInstructions(environment);
 
       // Replace placeholders with actual user data
       const finalPrompt = promptContent
         .replace(/\{\{CPF\}\}/g, actor.cpf)
         .replace(/\{\{NAME\}\}/g, actor.name)
-        .replace(/\{\{ROLE\}\}/g, isCoordinator ? 'Coordenador' : 'Estudante');
+        .replace(/\{\{ROLE\}\}/g, isCoordinator ? 'Coordenador' : 'Estudante')
+        .replace(/\{\{FORMATTING_INSTRUCTIONS\}\}/g, formattingInstructions);
 
       if (this.debugVerbose) {
         console.log(`[PROMPT] Final prompt preview: ${finalPrompt.substring(0, 300)}...`);
@@ -48,20 +104,22 @@ export class PromptService {
       return finalPrompt;
     } catch (error) {
       console.error(`Error loading prompt file ${promptFile}:`, error);
-      
+
       // Fallback to basic prompt if file loading fails
       return `
         Você é um assistente virtual para a plataforma RADE.
-        
+
         Usuário atual: ${actor.name} (Perfil: ${isCoordinator ? 'Coordenador' : 'Estudante'})
         CPF do usuário: ${actor.cpf}
 
         REGRAS ABSOLUTAS:
         1. VOCÊ DEVE USAR AS FERRAMENTAS ANTES DE RESPONDER. NUNCA RESPONDA SEM USAR AS FERRAMENTAS PRIMEIRO.
         2. ESCOPO EXCLUSIVO RADE: Responda APENAS sobre assuntos acadêmicos da RADE. Para QUALQUER outra pergunta (futebol, clima, notícias, receitas, etc.), responda: "Desculpe, não posso te ajudar com essa questão. Posso ajudá-lo com informações sobre seus dados acadêmicos, atividades ou preceptores da plataforma RADE."
-        
+
         Para QUALQUER pergunta sobre dados, informações pessoais ou acadêmicas, você DEVE chamar uma ferramenta ANTES de responder.
         NUNCA invente respostas - SEMPRE use as ferramentas disponíveis.
+
+        ${this.getFormattingInstructions(environment)}
       `;
     }
   }
