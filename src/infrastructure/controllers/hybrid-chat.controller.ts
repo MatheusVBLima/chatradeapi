@@ -658,11 +658,12 @@ Digite "voltar" para retornar ao menu anterior ou "sair" para encerrar.`,
 
     try {
       // Use the existing AI chat functionality with authenticated state
+      const actorEnvironment = state.data.environment || ChatEnvironment.WEB;
       const result = await this.processOpenChatMessageUseCase.execute({
         message: message,
         userId: state.data.userCpf,
         phone: state.data.userPhone, // Passa o telefone já autenticado
-        environment: ChatEnvironment.WEB,
+        environment: actorEnvironment,
         state: state.data.openChatState || {
           currentState: 'AUTHENTICATED',
           data: {
