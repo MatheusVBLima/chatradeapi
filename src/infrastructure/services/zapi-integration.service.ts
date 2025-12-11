@@ -78,12 +78,24 @@ export class ZapiIntegrationService {
   }
 
   /**
+   * Converte markdown para formatação nativa do WhatsApp
+   */
+  private formatForWhatsApp(text: string): string {
+    return text
+      .replace(/\*\*(.+?)\*\*/g, '*$1*')  // **negrito** → *negrito*
+      .replace(/~~(.+?)~~/g, '~$1~');     // ~~tachado~~ → ~tachado~
+  }
+
+  /**
    * Envia mensagem para instância de teste
    */
   private async sendMessageToTestInstance(instanceId: string, phone: string, message: string): Promise<void> {
     const testToken = process.env.ZAPI_TEST_TOKEN;
     const testClientToken = process.env.ZAPI_TEST_CLIENT_TOKEN;
     const baseUrl = process.env.ZAPI_BASE_URL || 'https://api.z-api.io';
+
+    // Converter markdown para formato WhatsApp
+    const formattedMessage = this.formatForWhatsApp(message);
 
     if (!testToken) {
       this.logger.warn(`Token de teste não configurado para instância ${instanceId}. Usando configuração padrão.`);
@@ -100,7 +112,7 @@ export class ZapiIntegrationService {
         },
         body: JSON.stringify({
           phone,
-          message,
+          message: formattedMessage,
         }),
       });
 

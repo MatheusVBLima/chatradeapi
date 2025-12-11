@@ -3,7 +3,8 @@
     "allow": [
       "Bash(powershell -Command \"Stop-Process -Id 3796 -Force\")",
       "Bash(tasklist:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

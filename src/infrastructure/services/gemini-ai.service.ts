@@ -6,6 +6,7 @@ import {
   type CoreMessage,
   type ToolCallPart,
   tool,
+  stepCountIs,
 } from 'ai';
 import type { LanguageModelV2 } from '@ai-sdk/provider';
 import { jsonSchema } from '@ai-sdk/provider-utils';
@@ -452,7 +453,8 @@ export class GeminiAIService implements AIService {
         system: systemPrompt,
         messages: trimmedMessages,
         tools: toolsWithExecute, // ✅ Tools com execute functions
-        temperature: 0.4, // 🔧 FIX: Changed from 0.1 - better for tool calling (was too conservative)
+        stopWhen: stepCountIs(5), // ✅ Multi-step: continua até 5 steps ou modelo parar
+        temperature: 0.2, // slightly higher to incentivar resposta pós-tool
         maxRetries: 0,
         experimental_telemetry: { isEnabled: false },
         onStepFinish: ({
@@ -495,9 +497,15 @@ export class GeminiAIService implements AIService {
         errorMessage.includes('UNAVAILABLE') ||
         primaryError?.statusCode === 503 ||
         primaryError?.data?.error?.code === 503;
+      const isInternal500 =
+        primaryError?.statusCode === 500 ||
+        primaryError?.data?.error?.code === 500 ||
+        errorMessage.includes('"code":500');
 
-      if (isOverloadError) {
-        console.log('[AI-SDK5] Overload detected, using fallback model');
+      if (isOverloadError || isInternal500) {
+        console.log(
+          `[AI-SDK5] ${isOverloadError ? 'Overload' : '500'} detected, using fallback model`,
+        );
         usedFallback = true;
 
         // Tentar com modelo fallback
@@ -506,7 +514,8 @@ export class GeminiAIService implements AIService {
           system: systemPrompt,
           messages: trimmedMessages,
           tools: toolsWithExecute, // ✅ Tools com execute functions (AI SDK 5.0 executa automaticamente)
-          temperature: 0.4, // 🔧 FIX: Changed from 0.1
+          stopWhen: stepCountIs(5), // ✅ Multi-step: continua até 5 steps ou modelo parar
+          temperature: 0.2,
           maxRetries: 2,
           experimental_telemetry: { isEnabled: false },
           onStepFinish: ({
@@ -589,51 +598,69 @@ export class GeminiAIService implements AIService {
     // Usar completeText se finalText do stream estiver vazio
     const responseText = finalText || completeText;
 
-    // ⚠️ FALLBACK: Apenas se realmente não houver texto (erro inesperado)
+    // ⚠️ Se ainda não houver texto, tentar uma segunda geração sem tools, usando dados das ferramentas como contexto
     if (!responseText || responseText.trim().length === 0) {
       console.warn(
-        '[AI-SDK5] Empty response even with stopWhen! Using emergency fallback...',
+        '[AI-SDK5] Empty response even with stopWhen! Trying regen without tools...',
       );
 
       const steps = await result.steps;
-      console.log('[AI-SDK5] Emergency fallback - Steps:', steps?.length || 0);
-
+      let toolResultsNote = '';
       if (steps && steps.length > 0) {
         const lastStep: any = steps[steps.length - 1];
-
         if (lastStep?.toolResults && lastStep.toolResults.length > 0) {
-          console.log(
-            '[AI-SDK5] Building emergency fallback from tool results',
-          );
-
-          const toolResults = lastStep.toolResults.map((tr: any) => ({
-            toolName: tr.toolName,
-            result: tr.result || tr.output || tr,
-          }));
-
-          const fallbackResponse = this.buildFallbackResponseFromToolResults(
-            toolResults,
-            userMessage,
-          );
-
-          if (fallbackResponse && fallbackResponse.length > 10) {
-            const firstResponse = await result.response;
-            const messagesWithToolResults = [
-              ...trimmedMessages,
-              ...(firstResponse?.messages || []),
-              { role: 'assistant', content: fallbackResponse },
-            ];
-
-            return {
-              text: fallbackResponse,
-              messages: messagesWithToolResults,
-            };
-          }
+          const summarized = lastStep.toolResults
+            .map((tr: any) => {
+              const name = tr.toolName || 'tool';
+              try {
+                return `${name}: ${JSON.stringify(tr.result || tr.output || tr).slice(0, 800)}`;
+              } catch {
+                return `${name}: [unserializable result]`;
+              }
+            })
+            .join('\n');
+          toolResultsNote = `Use os dados já obtidos das ferramentas para responder direto (sem pedir confirmação):\n${summarized}`;
         }
       }
 
-      // Erro final
-      console.error('[AI-SDK5] No fallback available, returning error message');
+      const regenMessages = [...trimmedMessages];
+      if (toolResultsNote) {
+        regenMessages.push({ role: 'assistant', content: toolResultsNote });
+      }
+
+      try {
+        const regen = await streamText({
+          model: usedFallback ? (this.fallbackModel as any) : (this.primaryModel as any),
+          system: systemPrompt,
+          messages: regenMessages,
+          temperature: 0.4,
+          maxRetries: 0,
+          experimental_telemetry: { isEnabled: false },
+        });
+
+        let regenText = '';
+        for await (const part of regen.fullStream) {
+          if (part.type === 'text-delta') {
+            regenText += part.text;
+          } else if (part.type === 'error') {
+            throw new Error(`Regen stream error: ${JSON.stringify(part.error)}`);
+          }
+        }
+
+        const completeRegenText = regenText || (await regen.text);
+        if (completeRegenText && completeRegenText.trim().length > 0) {
+          const regenResp = await regen.response;
+          const updatedMessages = [
+            ...trimmedMessages,
+            ...(regenResp?.messages || [{ role: 'assistant', content: completeRegenText }]),
+          ];
+          return { text: completeRegenText, messages: updatedMessages };
+        }
+      } catch (regenErr) {
+        console.error('[AI-SDK5] Regen without tools failed:', regenErr);
+      }
+
+      // Se ainda assim vazio, retornar erro simples
       const errorMsg =
         'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
       return {
@@ -1185,6 +1212,8 @@ export class GeminiAIService implements AIService {
     toolResults: Array<{ toolName: string; result: any }>,
     userMessage: string,
   ): string {
+    // Fallback desabilitado para permitir que o modelo responda sem formatação fixa.
+    return '';
     try {
       console.log(
         '[FALLBACK] Building response for',
@@ -1459,33 +1488,19 @@ export class GeminiAIService implements AIService {
             return 'Você não possui estudantes supervisionados no momento.';
           }
 
-          // Mesma lógica de lista completa, mas com limite maior (100+ estudantes)
-          const messageLower = userMessage
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-          const wantsFullList =
-            /\b(quais|todos|lista|meus|quem sao|mostre)\b/.test(messageLower) &&
-            !/\b(chamado|nome|tem|tenho)\b/.test(messageLower);
-
-          // Se tem muitos estudantes (>20), não listar todos no chat
+          // Política: sempre devolver a lista até 20 itens sem perguntar
           if (tr.result.length > 20) {
-            return `Você tem ${tr.result.length} estudantes supervisionados. Isso é muita informação para mostrar no chat. Gostaria de gerar um relatório em PDF/CSV?`;
+            return `Você tem ${tr.result.length} estudantes supervisionados. É muita informação para o chat. Vou gerar um relatório em PDF/CSV se você pedir.`;
           }
 
-          if (wantsFullList) {
-            let response = `Seus estudantes supervisionados (${tr.result.length}):\n\n`;
-            tr.result.forEach((student: any, idx: number) => {
-              response += `${idx + 1}. ${student.name}\n`;
-              response += `   • Email: ${student.email || 'Não disponível'}\n`;
-              if (student.phone)
-                response += `   • Telefone: ${student.phone}\n`;
-              response += '\n';
-            });
-            return response.trim();
-          }
-
-          return `Você tem ${tr.result.length} estudantes. Gostaria de ver todos ou buscar um específico?`;
+          let response = `Seus estudantes supervisionados (${tr.result.length}):\n\n`;
+          tr.result.forEach((student: any, idx: number) => {
+            response += `${idx + 1}. ${student.name}\n`;
+            response += `   • Email: ${student.email || 'Não disponível'}\n`;
+            if (student.phone) response += `   • Telefone: ${student.phone}\n`;
+            response += '\n';
+          });
+          return response.trim();
         }
 
         // Atividades em andamento do coordenador
