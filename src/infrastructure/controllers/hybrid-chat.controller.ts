@@ -303,7 +303,9 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     const response = `Olá! Bem-vindo ao atendimento RADE! Para começar, me diga qual seu perfil:
 
 1 - Sou Estudante
+
 2 - Sou Coordenador
+
 3 - Ainda não sou usuário`;
 
     return {
@@ -358,7 +360,9 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
     // Invalid choice
     const response = `Desculpe, não entendi sua resposta. Por favor, escolha uma das opções (1, 2 ou 3):
 1 - Sou Estudante
+
 2 - Sou Coordenador
+
 3 - Ainda não sou usuário`;
     return {
       response,
@@ -450,7 +454,9 @@ O estado da conversa é mantido através do campo 'state' que deve ser retornado
 
 O vídeo foi suficiente ou posso ajudar com algo mais?
 1 - Sim, foi suficiente
+
 2 - Não, preciso de mais ajuda
+
 3 - Voltar ao menu anterior`;
       return {
         response,
@@ -548,7 +554,9 @@ O vídeo foi suficiente ou posso ajudar com algo mais?
 
 O vídeo foi útil ou você precisa de mais alguma ajuda?
 1 - Sim, foi suficiente
+
 2 - Não, preciso de mais ajuda
+
 3 - Voltar ao menu anterior`;
       return {
         response,
@@ -873,13 +881,21 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     return {
       response: `${greeting}
 1 - Como fazer meu cadastro
+
 2 - Como agendar minhas atividades
+
 3 - Como iniciar e finalizar atividade
+
 4 - Como fazer uma avaliação
+
 5 - Como justificar atividade perdida
+
 6 - Como preencher meu TCE
+
 7 - Conversar com Atendente Virtual
+
 8 - Voltar ao menu inicial
+
 9 - Encerrar atendimento`,
       nextState: {
         currentState: HybridChatFlowState.AWAITING_STUDENT_MENU_CHOICE,
@@ -898,11 +914,17 @@ Digite "voltar" para retornar ao menu principal ou "sair" para encerrar.`,
     return {
       response: `${greeting}
 1 - Como validar atividades
+
 2 - Como realizar avaliação
+
 3 - Como baixar aplicativo para preceptores
+
 4 - Como gerar QR code
+
 5 - Conversar com Atendente Virtual
+
 6 - Voltar ao menu inicial
+
 7 - Encerrar atendimento`,
       nextState: {
         currentState: HybridChatFlowState.AWAITING_COORDINATOR_MENU_CHOICE,
