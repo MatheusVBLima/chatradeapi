@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import React from 'react';
+import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Streamdown } from 'streamdown';
 
