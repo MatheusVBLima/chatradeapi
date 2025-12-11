@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { User } from '../../domain/entities/user.entity';
@@ -6,6 +7,12 @@ import { User } from '../../domain/entities/user.entity';
 @Injectable()
 export class PromptService {
   private readonly promptsPath = this.getPromptsPath();
+  // 🔧 Flag para controlar logs verbosos (configurável via .env DEBUG_VERBOSE=true)
+  private readonly debugVerbose: boolean;
+
+  constructor(private readonly configService: ConfigService) {
+    this.debugVerbose = this.configService.get<string>('DEBUG_VERBOSE') === 'true';
+  }
 
   private getPromptsPath(): string {
     // In production, files are in dist folder, in development they're in src
@@ -24,8 +31,10 @@ export class PromptService {
     try {
       const promptContent = readFileSync(join(this.promptsPath, promptFile), 'utf-8');
 
-      console.log(`[PROMPT] Loading ${promptFile} from ${this.promptsPath}`);
-      console.log(`[PROMPT] Content preview: ${promptContent.substring(0, 200)}...`);
+      if (this.debugVerbose) {
+        console.log(`[PROMPT] Loading ${promptFile} from ${this.promptsPath}`);
+        console.log(`[PROMPT] Content preview: ${promptContent.substring(0, 200)}...`);
+      }
 
       // Replace placeholders with actual user data
       const finalPrompt = promptContent
@@ -33,7 +42,9 @@ export class PromptService {
         .replace(/\{\{NAME\}\}/g, actor.name)
         .replace(/\{\{ROLE\}\}/g, isCoordinator ? 'Coordenador' : 'Estudante');
 
-      console.log(`[PROMPT] Final prompt preview: ${finalPrompt.substring(0, 300)}...`);
+      if (this.debugVerbose) {
+        console.log(`[PROMPT] Final prompt preview: ${finalPrompt.substring(0, 300)}...`);
+      }
       return finalPrompt;
     } catch (error) {
       console.error(`Error loading prompt file ${promptFile}:`, error);

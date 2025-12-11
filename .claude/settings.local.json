@@ -4,7 +4,10 @@
       "Bash(powershell -Command \"Stop-Process -Id 3796 -Force\")",
       "Bash(tasklist:*)",
       "Bash(npm run build:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(npm run start:dev:prod:*)",
+      "Bash(npx ts-node:*)"
     ],
     "deny": [],
     "ask": []

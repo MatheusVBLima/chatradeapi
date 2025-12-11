@@ -26,6 +26,8 @@ export class GeminiAIService implements AIService {
   private readonly primaryModel: LanguageModelV2;
   private readonly fallbackModel: LanguageModelV2;
   private readonly apiBaseUrl: string;
+  // 🔧 Flag para controlar logs verbosos (configurável via .env DEBUG_VERBOSE=true)
+  private readonly debugVerbose: boolean;
 
   constructor(
     private readonly configService: ConfigService,
@@ -35,6 +37,9 @@ export class GeminiAIService implements AIService {
     private readonly promptService: PromptService,
     private readonly metricsService: MetricsService,
   ) {
+    // Ler flag de debug do .env (default: false)
+    this.debugVerbose = this.configService.get<string>('DEBUG_VERBOSE') === 'true';
+
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = this.configService.get<string>(
       'GOOGLE_GENERATIVE_AI_API_KEY',
     );
@@ -132,12 +137,14 @@ export class GeminiAIService implements AIService {
         typeof toolDef.parameters === 'object' &&
         ('_def' in toolDef.parameters || 'parse' in toolDef.parameters);
       
-      console.log(`[AI-SDK5] Building tool ${toolName}:`, {
-        hasParameters: !!toolDef.parameters,
-        isZodSchema,
-        parametersType: typeof toolDef.parameters,
-        description: toolDef.description?.substring(0, 50) + '...',
-      });
+      if (this.debugVerbose) {
+        console.log(`[AI-SDK5] Building tool ${toolName}:`, {
+          hasParameters: !!toolDef.parameters,
+          isZodSchema,
+          parametersType: typeof toolDef.parameters,
+          description: toolDef.description?.substring(0, 50) + '...',
+        });
+      }
 
       if (!toolDef.parameters) {
         console.error(`[AI-SDK5] ⚠️ Tool ${toolName} has no parameters!`);
@@ -251,19 +258,23 @@ export class GeminiAIService implements AIService {
           jsonSchemaParams = toolDef.parameters;
         }
       } else {
-        console.log(`[AI-SDK5] Using explicit JSON Schema for ${toolName}`);
+        if (this.debugVerbose) {
+          console.log(`[AI-SDK5] Using explicit JSON Schema for ${toolName}`);
+        }
       }
 
       // Debug do schema final
-      const propsCount =
-        jsonSchemaParams?.properties && typeof jsonSchemaParams.properties === 'object'
-          ? Object.keys(jsonSchemaParams.properties).length
-          : 0;
-      console.log(`[AI-SDK5] Final schema for ${toolName}:`, {
-        type: jsonSchemaParams?.type,
-        propertiesCount: propsCount,
-        required: jsonSchemaParams?.required,
-      });
+      if (this.debugVerbose) {
+        const propsCount =
+          jsonSchemaParams?.properties && typeof jsonSchemaParams.properties === 'object'
+            ? Object.keys(jsonSchemaParams.properties).length
+            : 0;
+        console.log(`[AI-SDK5] Final schema for ${toolName}:`, {
+          type: jsonSchemaParams?.type,
+          propertiesCount: propsCount,
+          required: jsonSchemaParams?.required,
+        });
+      }
 
       // ✅ Garantir schema com type: 'object' para o Gemini (function calling exige isso)
       if (!jsonSchemaParams || jsonSchemaParams.type !== 'object') {
@@ -308,7 +319,9 @@ export class GeminiAIService implements AIService {
       });
     }
 
-    console.log(`[AI-SDK5] Built ${Object.keys(toolsWithExecute).length} tools with execute functions`);
+    if (this.debugVerbose) {
+      console.log(`[AI-SDK5] Built ${Object.keys(toolsWithExecute).length} tools with execute functions`);
+    }
     return toolsWithExecute;
   }
 
@@ -323,11 +336,8 @@ export class GeminiAIService implements AIService {
     messages: Array<{ role: string; content: any }>;
   }> {
     const startTime = Date.now();
-    console.log(
-      '[AI-SDK5] processToolCall called with:',
-      actor.cpf,
-      userMessage,
-    );
+    // Log essencial: entrada da chamada
+    console.log(`[AI] Processing: "${userMessage.substring(0, 50)}..." for ${actor.cpf}`);
 
     // 💾 Salvar mensagem do usuário no cache para detecção de formato
     this.cacheService.set(
@@ -346,19 +356,23 @@ export class GeminiAIService implements AIService {
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       }));
-      console.log(
-        '[AI-SDK5] Using conversation history from flow:',
-        existingMessages.length,
-        'messages',
-      );
+      if (this.debugVerbose) {
+        console.log(
+          '[AI-SDK5] Using conversation history from flow:',
+          existingMessages.length,
+          'messages',
+        );
+      }
     } else {
       // Fallback: buscar do cache
       existingMessages = this.cacheService.get(conversationKey) || [];
-      console.log(
-        '[AI-SDK5] Using conversation history from cache:',
-        existingMessages.length,
-        'messages',
-      );
+      if (this.debugVerbose) {
+        console.log(
+          '[AI-SDK5] Using conversation history from cache:',
+          existingMessages.length,
+          'messages',
+        );
+      }
     }
 
     // 2. Adicionar nova mensagem do usuário
@@ -372,31 +386,37 @@ export class GeminiAIService implements AIService {
     const trimmedMessages = this.smartTrimMessages(messages, 20);
 
     // Debug: Ver estrutura das mensagens
-    console.log(
-      '[AI-SDK5] Trimmed messages preview:',
-      JSON.stringify(trimmedMessages.slice(-2), null, 2).substring(0, 500),
-    );
+    if (this.debugVerbose) {
+      console.log(
+        '[AI-SDK5] Trimmed messages preview:',
+        JSON.stringify(trimmedMessages.slice(-2), null, 2).substring(0, 500),
+      );
+    }
 
     // 4. ✅ AI SDK v5: Construir tools com execute functions
-    console.log('[AI-SDK5] Available tools received:', {
-      count: Object.keys(availableTools).length,
-      toolNames: Object.keys(availableTools),
-      firstTool: availableTools[Object.keys(availableTools)[0]] ? {
-        hasDescription: !!availableTools[Object.keys(availableTools)[0]].description,
-        hasParameters: !!availableTools[Object.keys(availableTools)[0]].parameters,
-        parametersType: typeof availableTools[Object.keys(availableTools)[0]].parameters,
-      } : null,
-    });
-    
+    if (this.debugVerbose) {
+      console.log('[AI-SDK5] Available tools received:', {
+        count: Object.keys(availableTools).length,
+        toolNames: Object.keys(availableTools),
+        firstTool: availableTools[Object.keys(availableTools)[0]] ? {
+          hasDescription: !!availableTools[Object.keys(availableTools)[0]].description,
+          hasParameters: !!availableTools[Object.keys(availableTools)[0]].parameters,
+          parametersType: typeof availableTools[Object.keys(availableTools)[0]].parameters,
+        } : null,
+      });
+    }
+
     const toolsWithExecute = this.buildToolsWithExecute(
       availableTools,
       actor.cpf,
     );
-    
-    console.log('[AI-SDK5] Tools with execute built:', {
-      count: Object.keys(toolsWithExecute).length,
-      toolNames: Object.keys(toolsWithExecute),
-    });
+
+    if (this.debugVerbose) {
+      console.log('[AI-SDK5] Tools with execute built:', {
+        count: Object.keys(toolsWithExecute).length,
+        toolNames: Object.keys(toolsWithExecute),
+      });
+    }
 
     // Métricas de tokens
     const systemPrompt = this.promptService.getSystemPrompt(actor);
@@ -407,47 +427,51 @@ export class GeminiAIService implements AIService {
         0,
       );
 
-    console.log('[METRICS] Estimated input tokens:', estimatedInputTokens);
-    console.log(
-      '[METRICS] Available tools:',
-      Object.keys(toolsWithExecute).length,
-    );
-    console.log('[METRICS] Message history length:', trimmedMessages.length);
+    if (this.debugVerbose) {
+      console.log('[METRICS] Estimated input tokens:', estimatedInputTokens);
+      console.log(
+        '[METRICS] Available tools:',
+        Object.keys(toolsWithExecute).length,
+      );
+      console.log('[METRICS] Message history length:', trimmedMessages.length);
 
-    // 🔍 Enhanced debugging logs for tool calling
-    console.log('[DEBUG] ===== TOOL CALLING DEBUG =====');
-    console.log('[DEBUG] User message:', userMessage);
-    console.log('[DEBUG] User role:', actor.role);
-    console.log('[DEBUG] Tools being sent to Gemini:', {
-      count: Object.keys(toolsWithExecute).length,
-      names: Object.keys(toolsWithExecute),
-    });
+      // 🔍 Enhanced debugging logs for tool calling
+      console.log('[DEBUG] ===== TOOL CALLING DEBUG =====');
+      console.log('[DEBUG] User message:', userMessage);
+      console.log('[DEBUG] User role:', actor.role);
+      console.log('[DEBUG] Tools being sent to Gemini:', {
+        count: Object.keys(toolsWithExecute).length,
+        names: Object.keys(toolsWithExecute),
+      });
 
-    // Log first tool schema as sample
-    const firstToolName = Object.keys(toolsWithExecute)[0];
-    if (firstToolName && toolsWithExecute[firstToolName]) {
-      const sampleTool = toolsWithExecute[firstToolName] as any;
-      console.log('[DEBUG] Sample tool schema (first tool):', JSON.stringify({
-        name: firstToolName,
-        description: availableTools[firstToolName]?.description?.substring(0, 100) + '...',
-        schemaPreview: JSON.stringify(
-          sampleTool?.inputSchema || sampleTool?.parameters || {},
-        ).substring(0, 300) + '...',
-      }, null, 2));
+      // Log first tool schema as sample
+      const firstToolName = Object.keys(toolsWithExecute)[0];
+      if (firstToolName && toolsWithExecute[firstToolName]) {
+        const sampleTool = toolsWithExecute[firstToolName] as any;
+        console.log('[DEBUG] Sample tool schema (first tool):', JSON.stringify({
+          name: firstToolName,
+          description: availableTools[firstToolName]?.description?.substring(0, 100) + '...',
+          schemaPreview: JSON.stringify(
+            sampleTool?.inputSchema || sampleTool?.parameters || {},
+          ).substring(0, 300) + '...',
+        }, null, 2));
+      }
+
+      console.log('[DEBUG] Temperature: 0.1');
+      console.log('[DEBUG] Model:', 'gemini-2.0-flash');
+      console.log('[DEBUG] ================================');
     }
-
-    console.log('[DEBUG] Temperature: 0.1');
-    console.log('[DEBUG] Model:', 'gemini-2.0-flash');
-    console.log('[DEBUG] ================================');
 
     let result;
     let usedFallback = false;
 
     // 5. ✅ Usando stopWhen para controlar multi-step tool execution + text generation
     try {
-      console.log(
-        `[AI-SDK5] Calling streamText with stopWhen (v5 auto-handles tool execution)`,
-      );
+      if (this.debugVerbose) {
+        console.log(
+          `[AI-SDK5] Calling streamText with stopWhen (v5 auto-handles tool execution)`,
+        );
+      }
       result = await streamText({
         model: this.primaryModel as any,
         system: systemPrompt,
@@ -464,22 +488,22 @@ export class GeminiAIService implements AIService {
           finishReason,
           usage,
         }) => {
-          console.log('[AI-SDK5] onStepFinish:', {
-            textLength: text?.length || 0,
-            toolCallsCount: toolCalls?.length || 0,
-            toolResultsCount: toolResults?.length || 0,
-            finishReason,
-            inputTokens: usage?.inputTokens,
-            outputTokens: usage?.outputTokens,
-          });
-
-          // 🔍 Enhanced logging for debugging
+          // Log essencial: apenas tools chamadas e finish reason
           if (toolCalls && toolCalls.length > 0) {
-            console.log('[AI-SDK5] ✅ Tools called in this step:',
-              toolCalls.map(tc => tc.toolName)
-            );
-          } else if (!text || text.length === 0) {
-            console.warn('[AI-SDK5] ⚠️ NO TOOLS CALLED AND NO TEXT! Reason:', finishReason);
+            console.log('[AI-SDK5] ✅ Tools called:', toolCalls.map(tc => tc.toolName));
+          }
+          if (this.debugVerbose) {
+            console.log('[AI-SDK5] onStepFinish:', {
+              textLength: text?.length || 0,
+              toolCallsCount: toolCalls?.length || 0,
+              toolResultsCount: toolResults?.length || 0,
+              finishReason,
+              inputTokens: usage?.inputTokens,
+              outputTokens: usage?.outputTokens,
+            });
+          }
+          if (!toolCalls?.length && !text?.length) {
+            console.warn('[AI-SDK5] ⚠️ NO TOOLS AND NO TEXT! Reason:', finishReason);
           }
         },
       });
@@ -525,20 +549,18 @@ export class GeminiAIService implements AIService {
             finishReason,
             usage,
           }) => {
-            console.log('[AI-SDK5-FALLBACK] onStepFinish:', {
-              textLength: text?.length || 0,
-              toolCallsCount: toolCalls?.length || 0,
-              toolResultsCount: toolResults?.length || 0,
-              finishReason,
-            });
-
-            // 🔍 Enhanced logging for debugging
             if (toolCalls && toolCalls.length > 0) {
-              console.log('[AI-SDK5-FALLBACK] ✅ Tools called:',
-                toolCalls.map(tc => tc.toolName)
-              );
-            } else if (!text || text.length === 0) {
-              console.warn('[AI-SDK5-FALLBACK] ⚠️ NO TOOLS CALLED AND NO TEXT! Reason:', finishReason);
+              console.log('[AI-SDK5-FALLBACK] ✅ Tools called:', toolCalls.map(tc => tc.toolName));
+            }
+            if (this.debugVerbose) {
+              console.log('[AI-SDK5-FALLBACK] onStepFinish:', {
+                textLength: text?.length || 0,
+                toolCallsCount: toolCalls?.length || 0,
+                finishReason,
+              });
+            }
+            if (!toolCalls?.length && !text?.length) {
+              console.warn('[AI-SDK5-FALLBACK] ⚠️ NO TOOLS AND NO TEXT! Reason:', finishReason);
             }
           },
         });
@@ -557,11 +579,17 @@ export class GeminiAIService implements AIService {
           finalText += part.text;
         } else if (part.type === 'tool-call') {
           toolCallsCount++;
-          console.log(`[AI-SDK5] Tool called: ${part.toolName}`);
+          if (this.debugVerbose) {
+            console.log(`[AI-SDK5] Tool called: ${part.toolName}`);
+          }
         } else if (part.type === 'tool-result') {
-          console.log(`[AI-SDK5] Tool result received for: ${part.toolName}`);
+          if (this.debugVerbose) {
+            console.log(`[AI-SDK5] Tool result received for: ${part.toolName}`);
+          }
         } else if (part.type === 'step-finish') {
-          console.log(`[AI-SDK5] Step ${part.stepNumber} finished`);
+          if (this.debugVerbose) {
+            console.log(`[AI-SDK5] Step ${part.stepNumber} finished`);
+          }
         } else if (part.type === 'error') {
           console.error(`[AI-SDK5] Stream error:`, part.error);
 
@@ -585,14 +613,19 @@ export class GeminiAIService implements AIService {
       throw error;
     }
 
-    console.log(
-      `[AI-SDK5] Stream complete. Text length: ${finalText.length}, Tools called: ${toolCallsCount}`,
-    );
+    if (this.debugVerbose) {
+      console.log(
+        `[AI-SDK5] Stream complete. Text length: ${finalText.length}, Tools called: ${toolCallsCount}`,
+      );
+    }
 
     // ✅ Aguardar o result.text completo (pode não estar no stream ainda)
     const completeText = await result.text;
-    console.log(`[AI-SDK5] Complete text length: ${completeText.length}`);
-    console.log(`[AI-SDK5] Complete text content: "${completeText}"`);
+    // Log essencial: resposta final (truncada se muito longa)
+    console.log(`[AI-SDK5] Response: "${completeText.substring(0, 200)}${completeText.length > 200 ? '...' : ''}"`);
+    if (this.debugVerbose) {
+      console.log(`[AI-SDK5] Complete text length: ${completeText.length}`);
+    }
 
     // ✅ Com stopWhen, AI SDK garante que sempre teremos texto final
     // Usar completeText se finalText do stream estiver vazio
@@ -1928,7 +1961,7 @@ export class GeminiAIService implements AIService {
 
       case 'findPersonByName':
         const { name: searchName, cpf: searcherCpf } = args;
-        let foundPerson: any = null;
+        const foundPersons: any[] = []; // Array para múltiplos resultados
 
         // Função para normalizar texto (remover acentos e converter para lowercase)
         const normalizeText = (text: string): string => {
@@ -1963,54 +1996,66 @@ export class GeminiAIService implements AIService {
           return matrix[b.length][a.length];
         };
 
-        // Função para buscar pessoa em uma lista de dados
-        const searchPersonInData = (
+        // Função para buscar TODAS as pessoas que correspondem ao nome (retorna arrays)
+        const searchAllPersonsInData = (
           dataList: any[],
           searchNameParam: string,
-        ): { exact: any; similar: any } => {
-          let exactMatch: any = null;
-          let similarMatch: any = null;
+        ): { exactMatches: any[]; similarMatches: any[] } => {
+          const exactMatches: any[] = [];
+          const similarMatches: any[] = [];
+          const normalizedSearchName = normalizeText(searchNameParam);
+          const searchWords = normalizedSearchName
+            .split(' ')
+            .filter((w) => w.length >= 2);
 
-          // Primeiro tentar busca exata (palavras completas)
-          exactMatch = dataList.find((person) => {
-            if (!person.name) return false;
+          for (const person of dataList) {
+            if (!person.name) continue;
             const normalizedPersonName = normalizeText(person.name);
-            const normalizedSearchName = normalizeText(searchNameParam);
             const personWords = normalizedPersonName.split(' ');
-            const searchWords = normalizedSearchName.split(' ');
 
-            return searchWords.every((searchWord) =>
+            // Verificar match exato (todas as palavras da busca existem no nome)
+            const isExactMatch = searchWords.every((searchWord) =>
               personWords.some((personWord) => personWord === searchWord),
             );
-          });
 
-          if (!exactMatch) {
-            const searchWords = normalizeText(searchNameParam)
-              .split(' ')
-              .filter((w) => w.length >= 3);
+            if (isExactMatch) {
+              exactMatches.push(person);
+              continue;
+            }
 
-            similarMatch = dataList.find((person) => {
-              if (!person.name) return false;
-              const personWords = normalizeText(person.name).split(' ');
-
-              return searchWords.some((searchWord) => {
-                return personWords.some((personWord) => {
-                  if (searchWord.length >= 4 && personWord.length >= 4) {
-                    const distance = editDistance(searchWord, personWord);
-                    const maxErrors = searchWord.length <= 6 ? 1 : 2;
-                    const minSimilarity = 0.75;
-                    const similarity =
-                      1 -
-                      distance / Math.max(searchWord.length, personWord.length);
-                    return distance <= maxErrors && similarity >= minSimilarity;
-                  }
-                  return false;
-                });
+            // Verificar match similar (fuzzy matching)
+            const isSimilarMatch = searchWords.some((searchWord) => {
+              return personWords.some((personWord) => {
+                if (searchWord.length >= 4 && personWord.length >= 4) {
+                  const distance = editDistance(searchWord, personWord);
+                  const maxErrors = searchWord.length <= 6 ? 1 : 2;
+                  const minSimilarity = 0.75;
+                  const similarity =
+                    1 -
+                    distance / Math.max(searchWord.length, personWord.length);
+                  return distance <= maxErrors && similarity >= minSimilarity;
+                }
+                return false;
               });
             });
+
+            if (isSimilarMatch) {
+              similarMatches.push(person);
+            }
           }
 
-          return { exact: exactMatch, similar: similarMatch };
+          return { exactMatches, similarMatches };
+        };
+
+        // Função para remover duplicatas baseado em nome + email
+        const removeDuplicates = (persons: any[]): any[] => {
+          const seen = new Set<string>();
+          return persons.filter((person) => {
+            const key = `${person.name}_${person.email}`.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         };
 
         // 1. PRIMEIRO: Buscar em TODOS os caches disponíveis
@@ -2025,38 +2070,41 @@ export class GeminiAIService implements AIService {
           cacheKeysToSearch,
         );
 
+        let allExactMatches: any[] = [];
+        let allSimilarMatches: any[] = [];
+
         for (const cacheKey of cacheKeysToSearch) {
           const cachedData = this.cacheService.get(cacheKey);
           if (cachedData && Array.isArray(cachedData)) {
             console.log(
               `[SEARCH] Found cache "${cacheKey}" with ${cachedData.length} items`,
             );
-            const { exact, similar } = searchPersonInData(
+            const { exactMatches, similarMatches } = searchAllPersonsInData(
               cachedData,
               searchName,
             );
 
-            if (exact) {
-              console.log(`[SEARCH] Exact match found in cache: ${exact.name}`);
-              foundPerson = exact;
-              break;
+            if (exactMatches.length > 0) {
+              console.log(
+                `[SEARCH] Found ${exactMatches.length} exact matches in cache "${cacheKey}"`,
+              );
+              allExactMatches.push(...exactMatches);
             }
 
-            if (similar && !foundPerson) {
+            if (similarMatches.length > 0) {
               console.log(
-                `[SEARCH] Similar match found in cache: ${similar.name}`,
+                `[SEARCH] Found ${similarMatches.length} similar matches in cache "${cacheKey}"`,
               );
-              // Guardar similar mas continuar buscando por exato
-              foundPerson = { ...similar, _isSimilar: true };
+              allSimilarMatches.push(...similarMatches);
             }
           }
         }
 
         // 2. Se não encontrou no cache, fazer chamadas de API apropriadas
-        if (!foundPerson) {
+        if (allExactMatches.length === 0 && allSimilarMatches.length === 0) {
           console.log('[SEARCH] Not found in cache, trying API calls...');
 
-          // Tentar buscar dados do coordenador (estudantes e profissionais)
+          // Tentar buscar dados do coordenador (estudantes)
           try {
             const studentsRaw =
               await this.virtualAssistanceService.getCoordinatorsStudents(
@@ -2067,22 +2115,18 @@ export class GeminiAIService implements AIService {
               console.log(
                 `[SEARCH] Fetched ${studentsRaw.length} students from API`,
               );
-              // Cache para próxima vez
               this.cacheService.set(
                 `getCoordinatorsStudents_${searcherCpf}`,
                 studentsRaw,
                 3600000,
               );
 
-              const { exact, similar } = searchPersonInData(
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
                 studentsRaw,
                 searchName,
               );
-              if (exact) {
-                foundPerson = exact;
-              } else if (similar && !foundPerson) {
-                foundPerson = { ...similar, _isSimilar: true };
-              }
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
           } catch (error: any) {
             console.log(
@@ -2091,115 +2135,125 @@ export class GeminiAIService implements AIService {
             );
           }
 
-          // Se ainda não encontrou, tentar profissionais do coordenador
-          if (!foundPerson || foundPerson._isSimilar) {
-            try {
-              const professionalsRaw =
-                await this.virtualAssistanceService.getCoordinatorsProfessionals(
-                  searcherCpf,
-                );
-
-              if (professionalsRaw && Array.isArray(professionalsRaw)) {
-                console.log(
-                  `[SEARCH] Fetched ${professionalsRaw.length} coordinator professionals from API`,
-                );
-                this.cacheService.set(
-                  `getCoordinatorsProfessionals_${searcherCpf}`,
-                  professionalsRaw,
-                  3600000,
-                );
-
-                const { exact, similar } = searchPersonInData(
-                  professionalsRaw,
-                  searchName,
-                );
-                if (exact) {
-                  foundPerson = exact;
-                } else if (similar && !foundPerson) {
-                  foundPerson = { ...similar, _isSimilar: true };
-                }
-              }
-            } catch (error: any) {
-              console.log(
-                '[SEARCH] Error fetching coordinator professionals:',
-                error.message,
+          // Tentar profissionais do coordenador
+          try {
+            const professionalsRaw =
+              await this.virtualAssistanceService.getCoordinatorsProfessionals(
+                searcherCpf,
               );
+
+            if (professionalsRaw && Array.isArray(professionalsRaw)) {
+              console.log(
+                `[SEARCH] Fetched ${professionalsRaw.length} coordinator professionals from API`,
+              );
+              this.cacheService.set(
+                `getCoordinatorsProfessionals_${searcherCpf}`,
+                professionalsRaw,
+                3600000,
+              );
+
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
+                professionalsRaw,
+                searchName,
+              );
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
+          } catch (error: any) {
+            console.log(
+              '[SEARCH] Error fetching coordinator professionals:',
+              error.message,
+            );
           }
 
-          // Se ainda não encontrou, tentar profissionais do estudante
-          if (!foundPerson || foundPerson._isSimilar) {
-            try {
-              const professionalsRaw =
-                await this.virtualAssistanceService.getStudentsProfessionals(
-                  searcherCpf,
-                );
-
-              if (professionalsRaw && Array.isArray(professionalsRaw)) {
-                console.log(
-                  `[SEARCH] Fetched ${professionalsRaw.length} student professionals from API`,
-                );
-                this.cacheService.set(
-                  `getStudentsProfessionals_${searcherCpf}`,
-                  professionalsRaw,
-                  3600000,
-                );
-
-                const { exact, similar } = searchPersonInData(
-                  professionalsRaw,
-                  searchName,
-                );
-                if (exact) {
-                  foundPerson = exact;
-                } else if (similar && !foundPerson) {
-                  foundPerson = { ...similar, _isSimilar: true };
-                }
-              }
-            } catch (error: any) {
-              console.log(
-                '[SEARCH] Error fetching student professionals:',
-                error.message,
+          // Tentar profissionais do estudante
+          try {
+            const professionalsRaw =
+              await this.virtualAssistanceService.getStudentsProfessionals(
+                searcherCpf,
               );
+
+            if (professionalsRaw && Array.isArray(professionalsRaw)) {
+              console.log(
+                `[SEARCH] Fetched ${professionalsRaw.length} student professionals from API`,
+              );
+              this.cacheService.set(
+                `getStudentsProfessionals_${searcherCpf}`,
+                professionalsRaw,
+                3600000,
+              );
+
+              const { exactMatches, similarMatches } = searchAllPersonsInData(
+                professionalsRaw,
+                searchName,
+              );
+              allExactMatches.push(...exactMatches);
+              allSimilarMatches.push(...similarMatches);
             }
+          } catch (error: any) {
+            console.log(
+              '[SEARCH] Error fetching student professionals:',
+              error.message,
+            );
           }
         }
 
-        // 3. Processar resultado
-        if (foundPerson) {
-          const isSimilar = foundPerson._isSimilar;
-          delete foundPerson._isSimilar;
+        // 3. Remover duplicatas
+        allExactMatches = removeDuplicates(allExactMatches);
+        allSimilarMatches = removeDuplicates(allSimilarMatches);
 
-          // Remover CPF antes de retornar (privacidade)
-          const foundPersonWithoutCpf = {
-            name: foundPerson.name,
-            email: foundPerson.email,
-            phone: foundPerson.phone,
-            groupNames: foundPerson.groupNames,
-          };
+        // 4. Processar resultado - priorizar matches exatos
+        const finalMatches =
+          allExactMatches.length > 0 ? allExactMatches : allSimilarMatches;
+        const isSimilarResult =
+          allExactMatches.length === 0 && allSimilarMatches.length > 0;
+
+        if (finalMatches.length > 0) {
+          // Remover CPF de todos os resultados (privacidade)
+          const resultsWithoutCpf = finalMatches.map((person) => ({
+            name: person.name,
+            email: person.email,
+            phone: person.phone,
+            groupNames: person.groupNames,
+          }));
+
+          console.log(
+            `[SEARCH] Returning ${resultsWithoutCpf.length} ${isSimilarResult ? 'similar' : 'exact'} matches for "${searchName}"`,
+          );
 
           this.cacheService.set(
             this.getLastResultCacheKey(searcherCpf),
-            [foundPersonWithoutCpf],
+            resultsWithoutCpf,
             3600000,
           );
 
-          if (isSimilar) {
-            console.log(
-              `[SEARCH] Returning similar match: ${foundPerson.name} for search "${searchName}"`,
-            );
-            return {
-              error: `Não, mas você tem "${foundPerson.name}" que é parecido.`,
-              suggestion: foundPersonWithoutCpf,
-            };
+          // Acumular para combinar com outros dados se necessário
+          for (const person of resultsWithoutCpf) {
+            this.accumulateData(searcherCpf, person, 'findPersonByName');
           }
 
-          // Acumular para combinar com outros dados se necessário
-          this.accumulateData(
-            searcherCpf,
-            foundPersonWithoutCpf,
-            'findPersonByName',
-          );
-          return foundPersonWithoutCpf;
+          // Retornar array se múltiplos, objeto único se apenas 1
+          if (resultsWithoutCpf.length === 1) {
+            if (isSimilarResult) {
+              return {
+                message: `Encontrei "${resultsWithoutCpf[0].name}" que é parecido com "${searchName}".`,
+                result: resultsWithoutCpf[0],
+              };
+            }
+            return resultsWithoutCpf[0];
+          }
+
+          // Múltiplos resultados
+          if (isSimilarResult) {
+            return {
+              message: `Encontrei ${resultsWithoutCpf.length} pessoas com nomes parecidos com "${searchName}".`,
+              results: resultsWithoutCpf,
+            };
+          }
+          return {
+            message: `Encontrei ${resultsWithoutCpf.length} pessoas com "${searchName}" no nome.`,
+            results: resultsWithoutCpf,
+          };
         } else {
           return { error: `Pessoa com nome "${searchName}" não encontrada.` };
         }
@@ -2470,12 +2524,14 @@ export class GeminiAIService implements AIService {
       return messages;
     }
 
-    console.log(
-      '[SMART-TRIM] Original message count:',
-      messages.length,
-      'Target:',
-      maxTotal,
-    );
+    if (this.debugVerbose) {
+      console.log(
+        '[SMART-TRIM] Original message count:',
+        messages.length,
+        'Target:',
+        maxTotal,
+      );
+    }
 
     // Garantir que preservamos:
     // 1. Última mensagem user (sempre)
@@ -2501,11 +2557,13 @@ export class GeminiAIService implements AIService {
       }
     });
 
-    console.log('[SMART-TRIM] Message types:', {
-      tool: toolMessages.length,
-      assistantWithToolCalls: assistantWithToolCalls.length,
-      regular: regularMessages.length,
-    });
+    if (this.debugVerbose) {
+      console.log('[SMART-TRIM] Message types:', {
+        tool: toolMessages.length,
+        assistantWithToolCalls: assistantWithToolCalls.length,
+        regular: regularMessages.length,
+      });
+    }
 
     // Preservar últimas 2 tool messages
     const toolsToKeep = toolMessages.slice(-2);
@@ -2561,11 +2619,13 @@ export class GeminiAIService implements AIService {
       result.push(lastMessage);
     }
 
-    console.log('[SMART-TRIM] Result message count:', result.length);
-    console.log(
-      '[SMART-TRIM] Preserved tools:',
-      result.filter((m) => m.role === 'tool').length,
-    );
+    if (this.debugVerbose) {
+      console.log('[SMART-TRIM] Result message count:', result.length);
+      console.log(
+        '[SMART-TRIM] Preserved tools:',
+        result.filter((m) => m.role === 'tool').length,
+      );
+    }
 
     return result;
   }
