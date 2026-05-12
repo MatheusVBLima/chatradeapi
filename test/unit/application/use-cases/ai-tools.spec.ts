@@ -1,4 +1,4 @@
-import { getVirtualAssistanceTools } from './ai-tools';
+import { getVirtualAssistanceTools } from '../../../../src/application/use-cases/ai-tools';
 
 const mockConfigService = {
   get: (key: string, defaultValue?: any) => {
@@ -9,25 +9,33 @@ const mockConfigService = {
 
 describe('getVirtualAssistanceTools', () => {
   const tools = getVirtualAssistanceTools(mockConfigService);
+  const sampleCpf = '12345678901';
 
   it('returns parameters with type object for every tool', () => {
     Object.entries(tools).forEach(([toolName, def]) => {
+      const sample =
+        toolName === 'findPersonByName'
+          ? { name: 'Pessoa Teste', cpf: sampleCpf }
+          : { cpf: sampleCpf };
+
       expect(def.parameters).toBeDefined();
-      expect(def.parameters.type).toBe('object');
-      expect(def.parameters.properties).toBeDefined();
+      expect(def.parameters.safeParse(sample).success).toBe(true);
     });
   });
 
   it('includes required fields for findPersonByName', () => {
     const findParams = tools.findPersonByName.parameters;
-    expect(findParams.required).toEqual(
-      expect.arrayContaining(['name', 'cpf']),
+    expect(findParams.safeParse({ name: 'Pessoa Teste', cpf: sampleCpf }).success).toBe(
+      true,
     );
+    expect(findParams.safeParse({ cpf: sampleCpf }).success).toBe(false);
   });
 
   it('adds generateReport when reports are enabled', () => {
     expect(tools.generateReport).toBeDefined();
-    expect(tools.generateReport.parameters.type).toBe('object');
+    expect(tools.generateReport.parameters.safeParse({ cpf: sampleCpf }).success).toBe(
+      true,
+    );
   });
 });
 

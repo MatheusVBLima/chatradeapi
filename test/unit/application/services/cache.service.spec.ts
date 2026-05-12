@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CacheService } from './cache.service';
+import { CacheService } from '../../../../src/application/services/cache.service';
 
 describe('CacheService', () => {
   let service: CacheService;
@@ -10,6 +10,10 @@ describe('CacheService', () => {
     }).compile();
 
     service = module.get<CacheService>(CacheService);
+  });
+
+  afterEach(() => {
+    service.clear();
   });
 
   it('should be defined', () => {

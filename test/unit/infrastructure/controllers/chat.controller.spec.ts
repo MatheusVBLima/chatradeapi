@@ -1,25 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ChatController } from './chat.controller';
-import { ProcessOpenChatMessageUseCase } from '../../application/use-cases/process-open-chat-message.use-case';
-import { ProcessClosedChatMessageUseCase } from '../../application/use-cases/process-closed-chat-message.use-case';
-import { ProcessApiChatMessageUseCase } from '../../application/use-cases/process-api-chat-message.use-case';
-import { ChatEnvironment } from '../../domain/enums/chat-environment.enum';
+import { ChatController } from '../../../../src/infrastructure/controllers/chat.controller';
+import { ProcessOpenChatMessageUseCase } from '../../../../src/application/use-cases/process-open-chat-message.use-case';
+import { ProcessClosedChatMessageUseCase } from '../../../../src/application/use-cases/process-closed-chat-message.use-case';
+import { ChatEnvironment } from '../../../../src/domain/enums/chat-environment.enum';
 
 describe('ChatController', () => {
   let controller: ChatController;
   let processOpenChatUseCase: ProcessOpenChatMessageUseCase;
   let processClosedChatUseCase: ProcessClosedChatMessageUseCase;
-  let processApiChatUseCase: ProcessApiChatMessageUseCase;
 
   const mockOpenChatUseCase = {
     execute: jest.fn(),
   };
 
   const mockClosedChatUseCase = {
-    execute: jest.fn(),
-  };
-
-  const mockApiChatUseCase = {
     execute: jest.fn(),
   };
 
@@ -35,17 +29,12 @@ describe('ChatController', () => {
           provide: ProcessClosedChatMessageUseCase,
           useValue: mockClosedChatUseCase,
         },
-        {
-          provide: ProcessApiChatMessageUseCase,
-          useValue: mockApiChatUseCase,
-        },
       ],
     }).compile();
 
     controller = module.get<ChatController>(ChatController);
     processOpenChatUseCase = module.get<ProcessOpenChatMessageUseCase>(ProcessOpenChatMessageUseCase);
     processClosedChatUseCase = module.get<ProcessClosedChatMessageUseCase>(ProcessClosedChatMessageUseCase);
-    processApiChatUseCase = module.get<ProcessApiChatMessageUseCase>(ProcessApiChatMessageUseCase);
   });
 
   afterEach(() => {
@@ -126,31 +115,6 @@ describe('ChatController', () => {
         nextState: { currentState: 'MENU', data: {} },
       });
       expect(mockClosedChatUseCase.execute).toHaveBeenCalledWith(request);
-    });
-  });
-
-  describe('processApiMessage', () => {
-    it('should process API chat message successfully', async () => {
-      const request = {
-        message: 'Hello',
-        environment: ChatEnvironment.WEB,
-        userId: '12345678901',
-      };
-
-      const mockResult = {
-        response: 'API response',
-        success: true,
-      };
-
-      mockApiChatUseCase.execute.mockResolvedValue(mockResult);
-
-      const result = await controller.processApiMessage(request);
-
-      expect(result).toEqual({
-        response: 'API response',
-        success: true,
-      });
-      expect(mockApiChatUseCase.execute).toHaveBeenCalledWith('Hello', '12345678901');
     });
   });
 

@@ -34,6 +34,7 @@ export class ProcessTestOpenChatMessageUseCase {
         request.state ?? null,
         request.phone,
         true, // isTestMode = true para test_open
+        request.environment,
       );
 
       // Add test prefix to response

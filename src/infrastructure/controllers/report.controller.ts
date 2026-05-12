@@ -26,7 +26,7 @@ O fluxo típico é:
 1. Dados são armazenados em cache com um ID único
 2. Este endpoint é chamado com o cacheId e formato desejado
 3. O relatório é gerado e retornado como download
-4. Os dados são removidos do cache após o uso
+4. Os dados ficam disponiveis ate o TTL do cache expirar
 
 Útil para evitar processamento pesado em tempo real e permitir geração assíncrona de relatórios.`,
   })
@@ -84,9 +84,6 @@ O fluxo típico é:
     if (!cachedData) {
       throw new NotFoundException('Dados do relatório não encontrados ou expirados. Por favor, solicite o relatório novamente.');
     }
-
-    // It's good practice to remove the data from cache once it's used
-    this.cacheService.delete(cacheId);
 
     // Extrair dados, título e labels de seção
     const { data, title = 'Dados', sectionLabels = null } = cachedData;

@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 
 @Injectable()
-export class CacheService {
+export class CacheService implements OnModuleDestroy {
   private readonly cache = new Map<string, any>();
   private readonly MAX_CACHE_SIZE = 1000; // Limite máximo de entradas no cache
 
@@ -50,5 +50,16 @@ export class CacheService {
         clearTimeout(entry.timeout);
         this.cache.delete(key);
     }
+  }
+
+  clear(): void {
+    for (const entry of this.cache.values()) {
+      clearTimeout(entry.timeout);
+    }
+    this.cache.clear();
+  }
+
+  onModuleDestroy(): void {
+    this.clear();
   }
 } 

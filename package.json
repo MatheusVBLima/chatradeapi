@@ -18,13 +18,16 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:cli": "npx ts-node cli-tests/test-hybrid-staging.ts",
-    "test:cli:hybrid": "npx ts-node cli-tests/test-hybrid-staging.ts",
-    "test:cli:open": "npx ts-node cli-tests/test-open-staging.ts",
-    "test:cli:closed": "npx ts-node cli-tests/test-closed-staging.ts",
-    "test:cli:notification": "node cli-tests/test-notification.js",
-    "test:latency": "npx ts-node scripts/test-gemini-latency.ts"
+    "test:e2e": "jest --config ./test/jest-e2e.json --forceExit",
+    "test:cli": "npx ts-node test/cli/test-hybrid-staging.ts",
+    "test:cli:hybrid": "npx ts-node test/cli/test-hybrid-staging.ts",
+    "test:cli:open": "npx ts-node test/cli/test-open-staging.ts",
+    "test:cli:open:auto": "npx ts-node test/cli/test-open-automated.ts",
+    "test:cli:closed": "npx ts-node test/cli/test-closed-staging.ts",
+    "test:cli:notification": "node test/cli/test-notification.js",
+    "test:latency": "npx ts-node test/scripts/test-gemini-latency.ts",
+    "test:sdk:gemini": "node test/scripts/test-gemini-request.js",
+    "test:sdk:tool-params": "node test/scripts/test-tool-params.js"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.44",
@@ -89,15 +92,15 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
+    "rootDir": ".",
+    "testRegex": "test/unit/.*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "coverage",
     "testEnvironment": "node"
   }
 }
