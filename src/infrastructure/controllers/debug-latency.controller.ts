@@ -278,7 +278,7 @@ export class DebugLatencyController {
         messages: [
           {
             role: 'user',
-            content: 'Quais os meus dados? Meu CPF é 07448080490',
+            content: 'Quais os meus dados? Meu CPF é 12345678901',
           },
         ],
         system:

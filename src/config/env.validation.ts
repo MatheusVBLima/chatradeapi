@@ -53,6 +53,18 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   GOOGLE_GENERATIVE_AI_API_KEY: string;
 
+  @IsString()
+  @IsOptional()
+  GEMINI_PRIMARY_MODEL?: string;
+
+  @IsString()
+  @IsOptional()
+  GEMINI_FALLBACK_MODEL?: string;
+
+  @IsString()
+  @IsOptional()
+  GEMINI_PRIMARY_TIMEOUT_MS?: string;
+
   // Chat Configuration
   @IsEnum(ChatMode)
   @IsOptional()

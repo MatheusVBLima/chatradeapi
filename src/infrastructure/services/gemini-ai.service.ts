@@ -24,6 +24,9 @@ import {
 export class GeminiAIService implements AIService {
   private readonly primaryModel: LanguageModelV2;
   private readonly fallbackModel: LanguageModelV2;
+  private readonly primaryModelName: string;
+  private readonly fallbackModelName: string;
+  private readonly primaryModelTimeoutMs: number;
   private readonly apiBaseUrl: string;
   // 🔧 Flag para controlar logs verbosos (configurável via .env DEBUG_VERBOSE=true)
   private readonly debugVerbose: boolean;
@@ -43,9 +46,19 @@ export class GeminiAIService implements AIService {
       'GOOGLE_GENERATIVE_AI_API_KEY',
     );
     // ✅ PRIMÁRIO: 2.0-flash é mais estável para tool calling (fix para bug do 2.5-flash-lite)
-    this.primaryModel = google('gemini-2.0-flash');
+    this.primaryModelName =
+      this.configService.get<string>('GEMINI_PRIMARY_MODEL') ||
+      'gemini-3.1-flash-lite';
     // ✅ FALLBACK: 2.5-flash-lite (mais barato, mas tem bug conhecido com multi-step tools)
-    this.fallbackModel = google('gemini-2.5-flash-lite');
+    this.fallbackModelName =
+      this.configService.get<string>('GEMINI_FALLBACK_MODEL') ||
+      'gemini-2.5-flash';
+    this.primaryModelTimeoutMs = Number(
+      this.configService.get<string>('GEMINI_PRIMARY_TIMEOUT_MS') || 45000,
+    );
+
+    this.primaryModel = google(this.primaryModelName);
+    this.fallbackModel = google(this.fallbackModelName);
     const configuredBaseUrl = this.configService.get<string>('API_BASE_URL');
     const renderExternalUrl = process.env.RENDER_EXTERNAL_URL;
     this.apiBaseUrl =
@@ -70,7 +83,7 @@ export class GeminiAIService implements AIService {
 
     // Try primary model first (sem retry interno - faremos nosso próprio fallback)
     try {
-      console.log('[AI] Attempting with primary model (gemini-2.0-flash)');
+      console.log(`[AI] Attempting with primary model (${this.primaryModelName})`);
       return await streamText({
         model: this.primaryModel as any,
         system,
@@ -83,20 +96,13 @@ export class GeminiAIService implements AIService {
       console.log('[AI] Primary model failed, analyzing error...', error?.name);
       // Check if it's a 503/overload error (check nested error objects too)
       const errorMessage = JSON.stringify(error);
-      const isOverloadError =
-        errorMessage.includes('overloaded') ||
-        errorMessage.includes('503') ||
-        errorMessage.includes('UNAVAILABLE') ||
-        error?.statusCode === 503 ||
-        error?.lastError?.statusCode === 503 ||
-        error?.data?.error?.code === 503 ||
-        error?.data?.error?.status === 'UNAVAILABLE';
+      const isOverloadError = this.isFallbackEligibleError(error);
 
       console.log('[AI] Is overload error?', isOverloadError);
 
       if (isOverloadError) {
         console.log(
-          '[AI] Primary model overloaded, falling back to gemini-2.5-flash-lite',
+          `[AI] Primary model overloaded, falling back to ${this.fallbackModelName}`,
         );
         try {
           return await streamText({
@@ -460,7 +466,7 @@ export class GeminiAIService implements AIService {
       }
 
       console.log('[DEBUG] Temperature: 0.1');
-      console.log('[DEBUG] Model:', 'gemini-2.0-flash');
+      console.log('[DEBUG] Model:', this.primaryModelName);
       console.log('[DEBUG] ================================');
     }
 
@@ -474,6 +480,12 @@ export class GeminiAIService implements AIService {
           `[AI-SDK5] Calling streamText with stopWhen (v5 auto-handles tool execution)`,
         );
       }
+      const primaryAbortController = new AbortController();
+      const primaryTimeout = setTimeout(
+        () => primaryAbortController.abort(),
+        this.primaryModelTimeoutMs,
+      );
+
       result = await streamText({
         model: this.primaryModel as any,
         system: systemPrompt,
@@ -482,6 +494,7 @@ export class GeminiAIService implements AIService {
         stopWhen: stepCountIs(5), // ✅ Multi-step: continua até 5 steps ou modelo parar
         temperature: 0.2, // slightly higher to incentivar resposta pós-tool
         maxRetries: 0,
+        abortSignal: primaryAbortController.signal,
         experimental_telemetry: { isEnabled: false },
         onStepFinish: ({
           text,
@@ -509,6 +522,7 @@ export class GeminiAIService implements AIService {
           }
         },
       });
+      (result as any).__primaryTimeout = primaryTimeout;
     } catch (primaryError: any) {
       console.error(
         '[AI] Primary model failed during stream, trying fallback...',
@@ -516,17 +530,8 @@ export class GeminiAIService implements AIService {
       );
 
       // Detectar erro de overload
-      const errorMessage = JSON.stringify(primaryError);
-      const isOverloadError =
-        errorMessage.includes('overloaded') ||
-        errorMessage.includes('503') ||
-        errorMessage.includes('UNAVAILABLE') ||
-        primaryError?.statusCode === 503 ||
-        primaryError?.data?.error?.code === 503;
-      const isInternal500 =
-        primaryError?.statusCode === 500 ||
-        primaryError?.data?.error?.code === 500 ||
-        errorMessage.includes('"code":500');
+      const isOverloadError = this.isFallbackEligibleError(primaryError);
+      const isInternal500 = this.isInternalServerError(primaryError);
 
       if (isOverloadError || isInternal500) {
         console.log(
@@ -575,15 +580,20 @@ export class GeminiAIService implements AIService {
     let finalText = '';
     let toolCallsCount = 0;
 
-    try {
-      for await (const part of result.fullStream) {
+    const readStream = async (
+      streamResult: any,
+    ): Promise<{ text: string; tools?: number; messages?: any }> => {
+      let text = '';
+      let tools = 0;
+
+      for await (const part of streamResult.fullStream) {
         if (part.type === 'text-delta') {
-          finalText += part.text;
+          text += part.text;
           if (streamCallbacks?.onTextChunk) {
             streamCallbacks.onTextChunk(part.text);
           }
         } else if (part.type === 'tool-call') {
-          toolCallsCount++;
+          tools++;
           if (this.debugVerbose) {
             console.log(`[AI-SDK5] Tool called: ${part.toolName}`);
           }
@@ -603,6 +613,7 @@ export class GeminiAIService implements AIService {
               'Desculpe, não posso te ajudar com essa questão. Posso ajudá-lo com informações sobre seus dados acadêmicos, atividades ou preceptores da plataforma RADE.';
             return {
               text: errorMsg,
+              tools: tools || 0,
               messages: [
                 ...trimmedMessages,
                 { role: 'assistant', content: errorMsg },
@@ -610,12 +621,56 @@ export class GeminiAIService implements AIService {
             };
           }
 
-          throw new Error(`Stream error: ${JSON.stringify(part.error)}`);
+          throw part.error;
         }
       }
+
+      return { text, tools };
+    };
+
+    try {
+      const streamRead = await readStream(result);
+      if ((result as any).__primaryTimeout) {
+        clearTimeout((result as any).__primaryTimeout);
+      }
+      finalText = streamRead.text;
+      toolCallsCount = streamRead.tools ?? 0;
     } catch (error) {
+      if ((result as any).__primaryTimeout) {
+        clearTimeout((result as any).__primaryTimeout);
+      }
       console.error(`[AI-SDK5] Error reading stream:`, error);
-      throw error;
+
+      if (!usedFallback && this.isFallbackEligibleError(error)) {
+        console.log(
+          `[AI-SDK5] Primary stream failed, retrying with fallback model (${this.fallbackModelName})`,
+        );
+        usedFallback = true;
+        result = await streamText({
+          model: this.fallbackModel as any,
+          system: systemPrompt,
+          messages: trimmedMessages,
+          tools: toolsWithExecute,
+          stopWhen: stepCountIs(5),
+          temperature: 0.2,
+          maxRetries: 2,
+          experimental_telemetry: { isEnabled: false },
+          onStepFinish: ({ toolCalls }) => {
+            if (toolCalls && toolCalls.length > 0) {
+              console.log(
+                '[AI-SDK5-FALLBACK] âœ… Tools called:',
+                toolCalls.map((tc) => tc.toolName),
+              );
+            }
+          },
+        });
+
+        const fallbackRead = await readStream(result);
+        finalText = fallbackRead.text;
+        toolCallsCount = fallbackRead.tools ?? 0;
+      } else {
+        throw error;
+      }
     }
 
     if (this.debugVerbose) {
@@ -625,7 +680,15 @@ export class GeminiAIService implements AIService {
     }
 
     // ✅ Aguardar o result.text completo (pode não estar no stream ainda)
-    const completeText = await result.text;
+    let completeText = finalText;
+    if (!completeText) {
+      try {
+        completeText = await result.text;
+      } catch (completeTextError) {
+        console.error('[AI-SDK5] Error reading complete text:', completeTextError);
+        completeText = '';
+      }
+    }
     // Log essencial: resposta final (truncada se muito longa)
     console.log(`[AI-SDK5] Response: "${completeText.substring(0, 200)}${completeText.length > 200 ? '...' : ''}"`);
     if (this.debugVerbose) {
@@ -634,8 +697,8 @@ export class GeminiAIService implements AIService {
 
     // ✅ Com stopWhen, AI SDK garante que sempre teremos texto final
     // Usar completeText se finalText do stream estiver vazio
-    const responseText = finalText || completeText;
-    const formattedResponseText = responseText;
+    let responseText = finalText || completeText;
+    let formattedResponseText = responseText;
 
     // ⚠️ Se ainda não houver texto, tentar uma segunda geração sem tools, usando dados das ferramentas como contexto
     if (!responseText || responseText.trim().length === 0) {
@@ -712,6 +775,44 @@ export class GeminiAIService implements AIService {
     }
 
     // 7. ✅ Salvar histórico com response.messages (AI SDK gerenciou tudo!)
+    let forcedReportResponse = false;
+
+    if (
+      this.isReportRequest(userMessage) &&
+      !this.hasReportLink(responseText)
+    ) {
+      console.warn(
+        '[AI-SDK5] Report requested but model did not generate a link. Forcing generateReport.',
+      );
+
+      try {
+        const forcedResult = await this.executeTool({
+          toolName: 'generateReport',
+          args: {
+            cpf: actor.cpf,
+            sectionLabels: ['Dados solicitados'],
+            sectionFilters: [''],
+          },
+          toolCallId: `forced-generateReport-${Date.now()}`,
+        });
+
+        if (forcedResult?.downloadUrl) {
+          responseText = `Pronto! Seu relatÃ³rio estÃ¡ disponÃ­vel: ${forcedResult.downloadUrl}`;
+          formattedResponseText = responseText;
+          forcedReportResponse = true;
+          console.log(
+            '[AI-SDK5] Forced report generated:',
+            forcedResult.downloadUrl,
+          );
+        }
+      } catch (forcedReportError) {
+        console.error(
+          '[AI-SDK5] Forced generateReport failed:',
+          forcedReportError,
+        );
+      }
+    }
+
     const responseMessages = await result.response;
     console.log(
       '[AI-SDK5] result.response.messages length:',
@@ -720,7 +821,9 @@ export class GeminiAIService implements AIService {
 
     const updatedMessages = [
       ...trimmedMessages,
-      ...(responseMessages?.messages || [
+      ...(forcedReportResponse
+        ? [{ role: 'assistant', content: responseText }]
+        : responseMessages?.messages || [
         { role: 'assistant', content: responseText },
       ]),
     ];
@@ -786,6 +889,52 @@ export class GeminiAIService implements AIService {
   // Estimativa simples de tokens (aprox. 4 caracteres = 1 token)
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
+  }
+
+  private isFallbackEligibleError(error: any): boolean {
+    const errorMessage = JSON.stringify(error || {});
+
+    return (
+      errorMessage.includes('overloaded') ||
+      errorMessage.includes('high demand') ||
+      errorMessage.includes('aborted') ||
+      error?.name === 'AbortError' ||
+      errorMessage.includes('503') ||
+      errorMessage.includes('UNAVAILABLE') ||
+      error?.statusCode === 503 ||
+      error?.lastError?.statusCode === 503 ||
+      error?.data?.error?.code === 503 ||
+      error?.data?.error?.status === 'UNAVAILABLE'
+    );
+  }
+
+  private isInternalServerError(error: any): boolean {
+    const errorMessage = JSON.stringify(error || {});
+
+    return (
+      error?.statusCode === 500 ||
+      error?.data?.error?.code === 500 ||
+      errorMessage.includes('"code":500')
+    );
+  }
+
+  private isReportRequest(message: string): boolean {
+    const normalized = message
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    return (
+      normalized.includes('relatorio') ||
+      normalized.includes('pdf') ||
+      normalized.includes('exportar') ||
+      normalized.includes('download') ||
+      normalized.includes('gerar arquivo')
+    );
+  }
+
+  private hasReportLink(text: string): boolean {
+    return /\/reports\/from-cache\/[^)\s]+\/pdf/.test(text);
   }
 
   // ⚠️ OLD CODE BELOW - Código antigo comentado para referência

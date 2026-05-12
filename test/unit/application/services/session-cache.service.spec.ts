@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SessionCacheService } from './session-cache.service';
+import { SessionCacheService } from '../../../../src/application/services/session-cache.service';
 
 describe('SessionCacheService', () => {
   let service: SessionCacheService;
@@ -55,16 +55,15 @@ describe('SessionCacheService', () => {
       expect(retrieved).toBeNull();
     });
 
-    it('should update last activity when getting session', () => {
+    it('should update last activity when getting session', async () => {
       const phone = '5511999999999';
       const session = service.createNewSession(phone);
       const initialActivity = session.lastActivity;
 
-      // Wait a bit
-      setTimeout(() => {
-        const retrieved = service.getActiveSession(phone);
-        expect(retrieved?.lastActivity.getTime()).toBeGreaterThan(initialActivity.getTime());
-      }, 10);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const retrieved = service.getActiveSession(phone);
+      expect(retrieved?.lastActivity.getTime()).toBeGreaterThan(initialActivity.getTime());
     });
   });
 
